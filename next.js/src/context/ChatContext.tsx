@@ -8,7 +8,7 @@ import {
   startNewChat,
   ChatMessage,
   sendMessageToChat,
-} from "@/lib/chats";
+} from "@/lib/server";
 import React, { createContext, useContext, useState, useEffect } from "react";
 
 interface ChatContextType {

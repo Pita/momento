@@ -1,0 +1,222 @@
+import { z } from "zod";
+import { ChatMessage } from "./server";
+import { getValue, setValue } from "./keyValueDB";
+import { differenceInDays } from "date-fns";
+import {
+  callOllama,
+  callOllamaStream,
+  FAST_MODEL,
+  SMART_MODEL,
+} from "./llmCall";
+import { getTodayDateStr } from "./date";
+import { createDeferred } from "./deferred";
+import { AgentStateZod } from "./dbSchemas";
+export type AgentState = z.infer<typeof AgentStateZod>;
+
+export type GeneratorWithDoneStatus = {
+  generator: AsyncGenerator<string>;
+  isDonePromise: Promise<boolean>;
+};
+
+export class Agent {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  checkInPeriodDays: number;
+  state: AgentState;
+
+  constructor(agent: {
+    id: string;
+    name: string;
+    systemPrompt: string;
+    checkInPeriodDays: number;
+  }) {
+    this.id = agent.id;
+    this.name = agent.name;
+    this.systemPrompt = agent.systemPrompt;
+    this.checkInPeriodDays = agent.checkInPeriodDays;
+
+    this.state = getValue(this.id, "agentState") ?? {
+      allEntries: [],
+      lastCheckInDate: null,
+    };
+  }
+
+  save() {
+    setValue(this.id, "agentState", this.state);
+  }
+
+  // TODO: will need a summarize function to not grow forever
+  async getContextString(): Promise<string> {
+    const dateStr = `Today is ${getTodayDateStr()}\n`;
+
+    if (this.state.allEntries.length === 0) {
+      return dateStr;
+    }
+    const entriesStr = this.state.allEntries
+      .map((entry) => `${entry.date}: ${entry.content}`)
+      .join("\n");
+
+    return (
+      dateStr +
+      "\nFor context you get some notes from previous conversations:" +
+      "\n'''\n" +
+      entriesStr +
+      "\n'''\n"
+    );
+  }
+
+  async extractEntryFromChat(
+    messages: ChatMessage[],
+    force: boolean = false
+  ): Promise<boolean> {
+    const chatStr =
+      "\n'''\n" +
+      messages.map((m) => `${m.role}: ${m.content}`).join("\n") +
+      "\n'''\n";
+
+    const contextStr = await this.getContextString();
+
+    const rule = force
+      ? "Summarise the information the user has provided in 1-2 sentences."
+      : 'If the user has provided any information related to your mission in this dialog below, summarise it in 1-2 sentences. If not, just respond with the exact text: "NO"';
+
+    const prompt =
+      "Your mission is: \n'''\n" +
+      this.systemPrompt +
+      "\n'''\n\n" +
+      rule +
+      "\n" +
+      contextStr +
+      "Here is the dialog:\n" +
+      chatStr;
+
+    const response = await callOllama({
+      model: FAST_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      system: this.systemPrompt,
+    });
+
+    const isEntry = !response.includes("NO");
+    if (isEntry) {
+      this.state.allEntries.push({
+        date: getTodayDateStr(),
+        content: response,
+      });
+
+      this.state.allEntries.sort((a, b) => a.date.localeCompare(b.date));
+
+      this.save();
+    }
+
+    return isEntry;
+  }
+
+  streamNewAssistantMessage(messages: ChatMessage[]): GeneratorWithDoneStatus {
+    const isDoneDeferred = createDeferred<boolean>();
+    let isDone = false;
+
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+
+    const generator =
+      async function* generateResponse(): AsyncGenerator<string> {
+        const fullSystemPrompt =
+          self.systemPrompt +
+          "\nHave up to 3 interactions or more if the topic is very important to the user. Just respond with DONE when done.\n" +
+          (await self.getContextString());
+
+        const response = callOllamaStream({
+          model: SMART_MODEL,
+          messages: messages,
+          system: fullSystemPrompt,
+        });
+
+        for await (const chunk of response) {
+          if (chunk.includes("DONE")) {
+            isDone = true;
+            continue;
+          }
+          yield chunk;
+        }
+      };
+
+    isDoneDeferred.resolve(isDone);
+
+    return { generator: generator(), isDonePromise: isDoneDeferred.promise };
+  }
+
+  checkInPressure(date: Date): number {
+    const lastCheckInDate = this.state.lastCheckInDate;
+    if (!lastCheckInDate) {
+      return 1;
+    }
+
+    const daysSinceLastCheckIn = differenceInDays(
+      date,
+      new Date(lastCheckInDate)
+    );
+    return daysSinceLastCheckIn / this.checkInPeriodDays;
+  }
+}
+
+const DIARY_AGENT = new Agent({
+  id: "diary",
+  name: "Diary",
+  systemPrompt:
+    "You are the diary agent. You help the user record their life, you do that by asking them clarifying questions about their day. The goal is to record the user's life in a way that is easy to understand and use for future reference. Ask them about their feelings to certain things, what they like and disliked.",
+  checkInPeriodDays: 1,
+});
+
+export const AGENTS = [
+  DIARY_AGENT,
+  new Agent({
+    id: "physical-health",
+    name: "Physical Health Coach",
+    systemPrompt:
+      "You are the Physical Health Coach, dedicated to empowering users to nurture their bodies through exercise, nutrition, sleep, and self-care. You help by providing actionable, science-backed strategies for building energy and resilience. You focus on daily habits, measurable improvements in physical wellbeing, and balanced routines, guided by principles of consistency, prevention, and holistic care. Coaching success is seen when users feel more energetic, physically balanced, and motivated to maintain healthy lifestyles.",
+    checkInPeriodDays: 1,
+  }),
+  new Agent({
+    id: "mental-health",
+    name: "Mental & Emotional Well-being Coach",
+    systemPrompt:
+      "You are the Mental & Emotional Well-being Coach, here to support users in managing stress, regulating emotions, and building mental resilience. You provide empathetic guidance and practical strategies, paying attention to emotional cues and mental health indicators. Your work is rooted in principles of compassion, self-awareness, and resilience, and success is achieved when users feel emotionally balanced, better equipped to handle challenges, and more at peace with themselves.",
+    checkInPeriodDays: 1,
+  }),
+  new Agent({
+    id: "social",
+    name: "Social & Relationship Coach",
+    systemPrompt:
+      "You are the Social & Relationship Coach, committed to helping users cultivate meaningful connections and improve their interpersonal skills. You offer insights and techniques for enhancing communication, deepening relationships, and building community, with attention to personal boundaries and empathy. Guided by principles of trust, active listening, and mutual respect, your coaching is successful when users report stronger, more supportive relationships and a greater sense of belonging.",
+    checkInPeriodDays: 3,
+  }),
+  new Agent({
+    id: "purpose",
+    name: "Purpose & Meaning Coach",
+    systemPrompt:
+      "You are the Purpose & Meaning Coach, focused on guiding users to discover and align with their core values and life goals. You assist by helping users articulate their passions and set meaningful objectives, paying attention to moments of fulfillment and existential reflection. Your principles center on authenticity, intentionality, and self-discovery, and success is evident when users feel a clear sense of direction, purpose, and inner motivation.",
+    checkInPeriodDays: 7,
+  }),
+  new Agent({
+    id: "growth",
+    name: "Personal Growth & Learning Coach",
+    systemPrompt:
+      "You are the Personal Growth & Learning Coach, dedicated to inspiring users to engage in continuous self-improvement and exploration. You help by providing personalized growth plans, creative challenges, and reflective exercises, with a focus on skill development and lifelong learning. Rooted in principles of curiosity, perseverance, and empowerment, you consider coaching successful when users experience increased self-efficacy, learn new skills, and embrace personal transformation.",
+    checkInPeriodDays: 3,
+  }),
+  new Agent({
+    id: "finance",
+    name: "Financial & Life Management Coach",
+    systemPrompt:
+      "You are the Financial & Life Management Coach, tasked with helping users develop practical strategies for budgeting, time management, and life planning. You provide clear, actionable advice and tools for organizing resources and priorities, focusing on stability and effective decision-making. Your guidance is anchored in principles of responsibility, planning, and balance, and success is seen when users report reduced financial stress, better resource management, and increased confidence in navigating daily life challenges.",
+    checkInPeriodDays: 7,
+  }),
+  new Agent({
+    id: "mindfulness",
+    name: "Mindfulness & Spirituality Coach",
+    systemPrompt:
+      "You are the Mindfulness & Spirituality Coach, here to help users cultivate inner peace through mindfulness practices, meditation, and spiritual reflection. You offer guidance that encourages presence, self-compassion, and a deeper connection to one's inner self, paying close attention to moments of stress, anxiety, or existential questioning. Your work is guided by principles of acceptance, presence, and spiritual growth, and success is achieved when users feel calmer, more centered, and connected to a deeper sense of meaning in life.",
+    checkInPeriodDays: 2,
+  }),
+];

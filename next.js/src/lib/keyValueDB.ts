@@ -1,38 +1,39 @@
-"use server";
-
 import * as fs from "fs";
 import path from "path";
 import { schemas } from "./dbSchemas";
 import { z } from "zod";
+import yaml from "js-yaml"; // importing YAML library
 
-// Directory where JSON files are stored
-const dbDir = path.join(process.cwd(), "data");
+// Directory where YAML files are stored
+function getDBDir(): string {
+  return path.join(process.cwd(), "data");
+}
 
 // Helper function to build a file path based on type and key
 function getFilePath(type: string, key: string): string {
-  // The file name is "<type>_<key>.json"
-  return path.join(dbDir, `${type}_${key}.json`);
+  // The file name is "<type>_<key>.yaml"
+  return path.join(getDBDir(), `${type}_${key}.yaml`);
 }
 
 /**
  * Retrieve a value from the key-value database.
- * The function reads the corresponding file, parses the JSON,
+ * The function reads the corresponding file, parses the YAML,
  * and validates the content against the Zod schema associated with the type.
  *
  * @param key - The key identifying the record.
  * @param type - The type (key) in the schemas dictionary.
  * @returns The validated data if the file exists and is valid, or null if the file does not exist.
  */
-export async function getValue<K extends keyof typeof schemas>(
+export function getValue<K extends keyof typeof schemas>(
   key: string,
   type: K
-): Promise<z.infer<(typeof schemas)[K]> | null> {
+): z.infer<(typeof schemas)[K]> | null {
   const filePath = getFilePath(String(type), key);
   const schema = schemas[type];
 
   try {
-    const data = await fs.promises.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(data);
+    const data = fs.readFileSync(filePath, "utf-8");
+    const parsed = yaml.load(data);
     // Validate the data; this will throw if the data is invalid.
     const validated = schema.parse(parsed);
     return validated;
@@ -49,17 +50,17 @@ export async function getValue<K extends keyof typeof schemas>(
 /**
  * Save a value in the key-value database.
  * The function validates the provided data against the Zod schema associated with the type
- * before writing the JSON stringified value to the appropriate file.
+ * before writing the YAML stringified value to the appropriate file.
  *
  * @param key - The key identifying the record.
  * @param type - The type (key) in the schemas dictionary.
  * @param data - The data to be stored.
  */
-export async function setValue<K extends keyof typeof schemas>(
+export function setValue<K extends keyof typeof schemas>(
   key: string,
   type: K,
   data: unknown
-): Promise<void> {
+): void {
   const schema = schemas[type];
 
   // Validate data; this will throw if the data doesn't match the schema.
@@ -68,9 +69,11 @@ export async function setValue<K extends keyof typeof schemas>(
   const filePath = getFilePath(String(type), key);
 
   // Ensure that the data directory exists.
-  await fs.promises.mkdir(dbDir, { recursive: true });
-  // Write the validated data as a JSON string.
-  await fs.promises.writeFile(filePath, JSON.stringify(validated), "utf-8");
+  fs.mkdirSync(getDBDir(), { recursive: true });
+  // Convert the validated data to a YAML string.
+  const yamlStr = yaml.dump(validated);
+  // Write the validated data as a YAML string.
+  fs.writeFileSync(filePath, yamlStr, "utf-8");
 }
 
 /**
@@ -79,12 +82,10 @@ export async function setValue<K extends keyof typeof schemas>(
  * @param type - The type (key) in the schemas dictionary.
  * @returns An array of IDs (strings) that exist for the given type.
  */
-export async function listKeys<K extends keyof typeof schemas>(
-  type: K
-): Promise<string[]> {
+export function listKeys<K extends keyof typeof schemas>(type: K): string[] {
   let files: string[];
   try {
-    files = await fs.promises.readdir(dbDir);
+    files = fs.readdirSync(getDBDir());
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return [];
@@ -93,7 +94,7 @@ export async function listKeys<K extends keyof typeof schemas>(
   }
 
   const prefix = `${type}_`;
-  const suffix = ".json";
+  const suffix = ".yaml";
   return files
     .filter((file) => file.startsWith(prefix) && file.endsWith(suffix))
     .map((file) => file.slice(prefix.length, file.length - suffix.length));
