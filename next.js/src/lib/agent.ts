@@ -5,11 +5,10 @@ import { differenceInDays } from "date-fns";
 import {
   callOllama,
   callOllamaStream,
-  FAST_MODEL,
+  REASONING_MODEL,
   SMART_MODEL,
 } from "./llmCall";
 import { getTodayDateStr } from "./date";
-import { createDeferred } from "./deferred";
 import { AgentStateZod } from "./dbSchemas";
 export type AgentState = z.infer<typeof AgentStateZod>;
 
@@ -78,8 +77,8 @@ export class Agent {
     const contextStr = await this.getContextString();
 
     const rule = force
-      ? "Summarise the information the user has provided in 1-2 sentences."
-      : 'If the user has provided any information related to your mission in this dialog below, summarise it in 1-2 sentences. If not, just respond with the exact text: "NO"';
+      ? "Summarize the provided dialog in regards to your mission in 1-2 sentences."
+      : "Think about if the conversation contains information relevant to your mission, if yes summarize the important information in 1-2 sentences; otherwise, respond with: NOT_RELEVANT";
 
     const prompt =
       "Your mission is: \n'''\n" +
@@ -92,58 +91,42 @@ export class Agent {
       chatStr;
 
     const response = await callOllama({
-      model: FAST_MODEL,
+      model: REASONING_MODEL,
       messages: [{ role: "user", content: prompt }],
       system: this.systemPrompt,
     });
 
-    const isEntry = !response.includes("NO");
+    const thinkEndStr = "</think>";
+    const thinkEndIndex = response.indexOf(thinkEndStr);
+    if (thinkEndIndex === -1) {
+      throw new Error("No </think> found in response");
+    }
+    const decision = response.slice(thinkEndIndex + thinkEndStr.length).trim();
+
+    const isEntry = !decision.toLowerCase().includes("not_relevant");
     if (isEntry) {
       this.state.allEntries.push({
         date: getTodayDateStr(),
-        content: response,
+        content: decision,
       });
-
       this.state.allEntries.sort((a, b) => a.date.localeCompare(b.date));
-
       this.save();
     }
 
     return isEntry;
   }
 
-  streamNewAssistantMessage(messages: ChatMessage[]): GeneratorWithDoneStatus {
-    const isDoneDeferred = createDeferred<boolean>();
-    let isDone = false;
+  async streamNewAssistantMessage(
+    messages: ChatMessage[]
+  ): Promise<AsyncGenerator<string>> {
+    const fullSystemPrompt =
+      this.systemPrompt + (await this.getContextString());
 
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const self = this;
-
-    const generator =
-      async function* generateResponse(): AsyncGenerator<string> {
-        const fullSystemPrompt =
-          self.systemPrompt +
-          "\nHave up to 3 interactions or more if the topic is very important to the user. Just respond with DONE when done.\n" +
-          (await self.getContextString());
-
-        const response = callOllamaStream({
-          model: SMART_MODEL,
-          messages: messages,
-          system: fullSystemPrompt,
-        });
-
-        for await (const chunk of response) {
-          if (chunk.includes("DONE")) {
-            isDone = true;
-            continue;
-          }
-          yield chunk;
-        }
-      };
-
-    isDoneDeferred.resolve(isDone);
-
-    return { generator: generator(), isDonePromise: isDoneDeferred.promise };
+    return callOllamaStream({
+      model: SMART_MODEL,
+      messages: messages,
+      system: fullSystemPrompt,
+    });
   }
 
   checkInPressure(date: Date): number {
