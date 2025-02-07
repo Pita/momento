@@ -76,13 +76,6 @@ export class Chat {
     this.state.agentsLinedup = linedupAgents;
   }
 
-  private async runFirstAgentIfNotConcluded(
-    agent: Agent,
-    messages: ChatMessage[]
-  ): Promise<AsyncGenerator<string> | null> {
-    return agent.streamNewAssistantMessage(messages);
-  }
-
   async *processUserMessage(message: string): AsyncGenerator<string> {
     const firstAgentHistory = this.state.history.at(-1)!;
     const firstAgentMessages = firstAgentHistory.messages;
@@ -97,10 +90,10 @@ export class Chat {
       throw new Error(`Agent ${firstAgentHistory.agentId} not found`);
     }
 
-    const firstAgentGenerator = await this.runFirstAgentIfNotConcluded(
-      firstAgent,
+    const firstAgentGenerator = await firstAgent.streamNewAssistantMessage(
       firstAgentMessages
     );
+
     const hasConcluded = firstAgentGenerator === null;
     if (!hasConcluded) {
       let assistantMessage = "";
