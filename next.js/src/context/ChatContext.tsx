@@ -16,6 +16,7 @@ interface ChatContextType {
   currentChat: ChatDetail | null;
   selectChat: (chat: ChatSummary) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
+  isProcessingUserMessage: boolean;
 }
 
 // Create the context
@@ -27,6 +28,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
   const [currentChat, setCurrentChat] = useState<ChatDetail | null>(null);
+  const [isProcessingUserMessage, setIsProcessingUserMessage] = useState(false);
 
   // On mount, initialize chats
   useEffect(() => {
@@ -48,7 +50,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // Function to select a chat from the sidebar by loading its details
-  // REST endpoint: GET /api/chats/:chatId/messages
   const selectChat = async (chat: ChatSummary) => {
     try {
       const fullChat = await loadChatDetails(chat.id);
@@ -60,9 +61,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // Function to send a user message, then simulate an assistant response
-  // REST endpoint: POST /api/chats/:chatId/messages
   const sendMessage = async (text: string) => {
     if (!text.trim() || !currentChat) return;
+    setIsProcessingUserMessage(true);
 
     // Immediately add user message to state
     const userMessage: ChatMessage = { role: "user", content: text };
@@ -86,6 +87,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         ],
       });
     }
+    setIsProcessingUserMessage(false);
   };
 
   return (
@@ -95,6 +97,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         currentChat,
         selectChat,
         sendMessage,
+        isProcessingUserMessage,
       }}
     >
       {children}

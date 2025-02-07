@@ -23,7 +23,7 @@ export type ChatDetail = ChatSummary & {
 // Simulated endpoint to fetch old chats
 export async function fetchOldChats(): Promise<ChatSummary[]> {
   const chats = listKeys("chatState");
-  return chats.map((c) => ({ id: c }));
+  return chats.map((c) => ({ id: c })).sort((a, b) => b.id.localeCompare(a.id));
 }
 
 // Simulated endpoint to start a new chat for today

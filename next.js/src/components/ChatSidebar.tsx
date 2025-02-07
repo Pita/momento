@@ -23,7 +23,7 @@ const ChatSidebar: React.FC = () => {
   const { chatSummaries, currentChat, selectChat } = useChat();
 
   return (
-    <aside className="w-full md:w-64 bg-gray-100 dark:bg-gray-800 p-4 border-b md:border-b-0 md:border-r border-gray-300">
+    <aside className="w-full md:w-64 bg-gray-100 p-4 border-b md:border-b-0 md:border-r border-gray-300 h-full">
       <div className="mb-4 flex justify-between items-center">
         <h2 className="text-lg font-bold">Chats</h2>
       </div>
