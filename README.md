@@ -2,24 +2,24 @@
 
 ## Goal
 
-The goal is it to have a web app which that helps you write diary entries and gives you helpful guidance for your life using LLMs. The goal is to have it privacy first, with just local LLMs thanks to ollama. This creates some interesting design challenges as only small LLMs with short context windows can be used.
+Momento is a web app that helps you write journaling entries and provides life guidance using LLMs. Privacy is a core focus, achieved by using local LLMs through Ollama. This creates interesting design challenges since only small LLMs with limited context windows can be used.
 
-## Tech stack
+## Tech Stack
 
-- Next.js (Typescript, TailwindCSS)
+- Next.js (TypeScript, TailwindCSS)
 - Ollama for LLMs
-- File based DB
+- File-based DB
 
-## Planned features:
+## Planned Features
 
-- Different agents for different aspects of a happy and fullfilled life
-- Backup possibility to Dropbox / Google Drive via encrypted files
-- Maybe memory retrival using a vector db
-- Maybe voice mode via local TTS and STT (could talk to it on a walk)
+- Different agents for various aspects of a happy and fulfilled life
+- Encrypted backup to Dropbox / Google Drive
+- Potential memory retrieval using a vector database
+- Possible voice mode using local TTS and STT (enabling conversations during walks)
 
 ## Setup
 
-**Important: This is a work in progress, the DB might change in incompatible ways.**
+**Important: This is a work in progress. The database schema may change in incompatible ways.**
 
-- Setup ollama and pull the models mentioned in src/lib/llmCall.ts
-- In the next.js folder run `npm install; npm run dev` then go to http://localhost:3000
+- Install Ollama and download the models listed in src/lib/llmCall.ts
+- In the Next.js folder, run `npm install; npm run dev` then navigate to http://localhost:3000
