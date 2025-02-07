@@ -19,5 +19,7 @@ The goal is it to have a web app which that helps you write diary entries and gi
 
 ## Setup
 
+**Important: This is a work in progress, the DB might change in incompatible ways.**
+
 - Setup ollama and pull the models mentioned in src/lib/llmCall.ts
 - In the next.js folder run `npm install; npm run dev` then go to http://localhost:3000
