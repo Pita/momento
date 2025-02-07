@@ -1,7 +1,7 @@
 import { ChatDetail, ChatMessage } from "./server";
 import { z } from "zod";
 import { getValue, setValue } from "./keyValueDB";
-import { Agent, AGENTS } from "./agent";
+import { Agent, AGENTS, ALL_AGENTS, DIARY_AGENT } from "./agent";
 import { ChatStateZod } from "./dbSchemas";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
@@ -10,24 +10,42 @@ export class Chat {
   id: string;
   state: ChatState;
 
-  constructor(id: string) {
+  constructor(id: string, state: ChatState) {
     this.id = id;
-    this.state = getValue(this.id, "chatState") ?? {
+    this.state = state;
+  }
+
+  static async loadOrThrow(id: string): Promise<Chat> {
+    const storedState = getValue(id, "chatState") as ChatState | undefined;
+    if (!storedState) {
+      throw new Error(`Chat ${id} not found`);
+    }
+    return new Chat(id, storedState);
+  }
+
+  static async create(
+    id: string
+  ): Promise<{ chat: Chat; welcomeMessageStream: AsyncGenerator<string> }> {
+    const storedState = getValue(id, "chatState") as ChatState | undefined;
+    if (storedState) {
+      throw new Error(`Chat ${id} already exists`);
+    }
+
+    const welcomeMessageStream = await DIARY_AGENT.getWelcomeMessageStream();
+    const newState: ChatState = {
       version: "1",
       history: [
         {
           agentId: "diary",
-          messages: [
-            {
-              role: "assistant",
-              content: "Hello, please tell me about your day.",
-            },
-          ],
+          messages: [],
           completed: false,
         },
       ],
       agentsLinedup: [],
     };
+    const newChat = new Chat(id, newState);
+    newChat.save();
+    return { chat: newChat, welcomeMessageStream };
   }
 
   save() {
@@ -74,7 +92,7 @@ export class Chat {
       content: message,
     });
 
-    const firstAgent = AGENTS.find((a) => a.id === firstAgentHistory.agentId);
+    const firstAgent = ALL_AGENTS[firstAgentHistory.agentId];
     if (!firstAgent) {
       throw new Error(`Agent ${firstAgentHistory.agentId} not found`);
     }
@@ -112,7 +130,7 @@ export class Chat {
       return;
     }
 
-    const secondAgent = AGENTS.find((a) => a.id === secondAgentId);
+    const secondAgent = ALL_AGENTS[secondAgentId];
     if (!secondAgent) {
       throw new Error(`Agent ${secondAgentId} not found`);
     }

@@ -8,6 +8,7 @@ import {
   startNewChat,
   ChatMessage,
   sendMessageToChat,
+  saveWelcomeMessage,
 } from "@/lib/server";
 import React, { createContext, useContext, useState, useEffect } from "react";
 
@@ -42,8 +43,23 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       if (todaysChatExists) {
         setCurrentChat(await loadChatDetails(today));
       } else {
-        setCurrentChat(await startNewChat());
+        const { chat, welcomeMessageStream } = await startNewChat();
+        setCurrentChat(chat);
         setChatSummaries((prev) => [...prev, { id: today }]);
+        setIsProcessingUserMessage(true);
+        const currentAssistantMessage: ChatMessage = {
+          role: "assistant",
+          content: "",
+        };
+        for await (const chunk of welcomeMessageStream) {
+          currentAssistantMessage.content += chunk;
+          setCurrentChat({
+            ...chat,
+            messages: [currentAssistantMessage],
+          });
+        }
+        setIsProcessingUserMessage(false);
+        saveWelcomeMessage(today, currentAssistantMessage.content);
       }
     }
     initChat();

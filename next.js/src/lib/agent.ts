@@ -116,6 +116,23 @@ export class Agent {
     return isEntry;
   }
 
+  async getWelcomeMessageStream(): Promise<AsyncGenerator<string>> {
+    const fullSystemPrompt =
+      this.systemPrompt +
+      (await this.getContextString()) +
+      "\nOpen the conversation for today";
+
+    return callOllamaStream({
+      model: SMART_MODEL,
+      messages: [
+        {
+          role: "user",
+          content: fullSystemPrompt,
+        },
+      ],
+    });
+  }
+
   async streamNewAssistantMessage(
     messages: ChatMessage[]
   ): Promise<AsyncGenerator<string>> {
@@ -143,16 +160,15 @@ export class Agent {
   }
 }
 
-const DIARY_AGENT = new Agent({
+export const DIARY_AGENT = new Agent({
   id: "diary",
   name: "Diary",
   systemPrompt:
-    "You are JournalingBot, a reflective companion focused solely on exploring today’s experiences. You have access to context from the past to help uncover recurring patterns or insights, but your primary focus is on the events, emotions, challenges, and successes of the current day. Ask open-ended, thoughtful questions to guide introspection and self-discovery. Maintain a supportive, empathetic, and non-judgmental tone throughout the conversation.",
+    "You are a reflective companion focused solely on exploring today’s experiences. You have access to context from the past to help uncover recurring patterns or insights, but your primary focus is on the events, emotions, challenges, and successes of the current day. Ask open-ended, thoughtful questions to guide introspection and self-discovery. Maintain a supportive, empathetic, and non-judgmental tone throughout the conversation.",
   checkInPeriodDays: 1,
 });
 
 export const AGENTS = [
-  DIARY_AGENT,
   new Agent({
     id: "physical-health",
     name: "Physical Health Coach",
@@ -203,3 +219,7 @@ export const AGENTS = [
     checkInPeriodDays: 2,
   }),
 ];
+
+export const ALL_AGENTS: Record<string, Agent> = Object.fromEntries(
+  [...AGENTS, DIARY_AGENT].map((agent) => [agent.id, agent])
+);

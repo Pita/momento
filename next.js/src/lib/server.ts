@@ -27,10 +27,25 @@ export async function fetchOldChats(): Promise<ChatSummary[]> {
 }
 
 // Simulated endpoint to start a new chat for today
-export async function startNewChat(): Promise<ChatDetail> {
+export async function startNewChat(): Promise<{
+  chat: ChatDetail;
+  welcomeMessageStream: AsyncGenerator<string>;
+}> {
   const chatId = getTodayDateStr();
-  const chat = new Chat(chatId);
-  return chat.getChatDetails();
+  const { chat, welcomeMessageStream } = await Chat.create(chatId);
+  return {
+    chat: chat.getChatDetails(),
+    welcomeMessageStream,
+  };
+}
+
+export async function saveWelcomeMessage(chatId: string, message: string) {
+  const chat = await Chat.loadOrThrow(chatId);
+  chat.state.history[0].messages.push({
+    role: "assistant",
+    content: message,
+  });
+  chat.save();
 }
 
 // Simulated sending of a message
@@ -38,12 +53,12 @@ export async function* sendMessageToChat(
   content: string,
   chatSummary: ChatSummary
 ): AsyncGenerator<string> {
-  const chat = new Chat(chatSummary.id);
+  const chat = await Chat.loadOrThrow(chatSummary.id);
   yield* chat.processUserMessage(content);
 }
 
 // Simulated endpoint to load the full details of a chat
 export async function loadChatDetails(chatId: string): Promise<ChatDetail> {
-  const chat = new Chat(chatId);
+  const chat = await Chat.loadOrThrow(chatId);
   return chat.getChatDetails();
 }
