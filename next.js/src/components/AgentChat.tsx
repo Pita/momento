@@ -37,7 +37,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ agentChat }: AgentChatProps) => {
             key={index}
             className={`p-2 rounded-lg w-fit max-w-[70%] prose prose-base ${
               msg.role === "user"
-                ? "bg-blue-100 text-black self-end ml-auto text-right"
+                ? "bg-blue-100 text-black self-end ml-auto"
                 : "bg-gray-200 text-black self-start mr-auto"
             }`}
           >
@@ -46,7 +46,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ agentChat }: AgentChatProps) => {
                 {msg.content.replaceAll("• ", "- ")}
               </ReactMarkdown>
             ) : (
-              msg.content
+              <div className="whitespace-pre-wrap">{msg.content}</div>
             )}
           </div>
         ))}

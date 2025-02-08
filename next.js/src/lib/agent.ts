@@ -15,8 +15,6 @@ export type GeneratorWithDoneStatus = {
   isDonePromise: Promise<boolean>;
 };
 
-const MESSAGE_LENGTH_HINT = "\nAnswer in roughly 1 sentence.\n";
-
 export class Agent {
   id: string;
   name: string;
@@ -149,7 +147,9 @@ export class Agent {
 
   async getNewAssistantMessage(messages: ChatMessage[]): Promise<OllamaResult> {
     const fullSystemPrompt =
-      this.systemPrompt + (await this.getContextString()) + MESSAGE_LENGTH_HINT;
+      this.systemPrompt +
+      (await this.getContextString()) +
+      "\nBriefly comment on the conversation so far similar to how a good supportive friend would. Then ask 3 very short easy questions in your response, use a numbered list. Generally keep the response short and concise.";
 
     return await callOllama({
       model: SMART_MODEL,

@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useChat } from "../context/ChatContext";
+import AutoGrowTextArea from "./AutoGrowTextArea";
+import { AGENT_CONSTANTS } from "@/lib/agentConstants";
 
 const ChatInput: React.FC = () => {
   const {
@@ -9,8 +11,8 @@ const ChatInput: React.FC = () => {
     canChatConclude,
   } = useChat();
   const [inputText, setInputText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { currentChat } = useChat();
   const handleSend = async () => {
     if (!inputText.trim() || isProcessingUserMessage) return;
     const message = inputText;
@@ -24,23 +26,28 @@ const ChatInput: React.FC = () => {
     }
   }, [isProcessingUserMessage]);
 
+  const agentId = currentChat?.agentChats.at(-1)?.agentId;
+  const currentAgentName = agentId ? AGENT_CONSTANTS[agentId].name : "";
+
   return (
     <div className="w-full p-4">
       <div className="flex flex-col max-w-4xl mx-auto w-full bg-gray-200 py-6 px-4 rounded-xl">
         <div className="flex gap-2">
-          <input
+          <AutoGrowTextArea
             ref={inputRef}
-            type="text"
             placeholder="Type your message..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
                 handleSend();
               }
             }}
             disabled={isProcessingUserMessage}
-            className="flex-1 p-2 border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
+            className="flex-1 p-2 border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed resize-none min-h-[40px]"
+            minHeight={70}
+            maxHeight={500}
             autoFocus
           />
           <button
@@ -62,7 +69,7 @@ const ChatInput: React.FC = () => {
             disabled={!canChatConclude}
             className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-blue-300 disabled:cursor-not-allowed"
           >
-            Conclude chat
+            Conclude {currentAgentName}
           </button>
         </div>
       </div>
