@@ -3,18 +3,18 @@
 import { getTodayDateStr } from "@/lib/date";
 import {
   ChatSummary,
-  ChatDetail,
   fetchOldChats,
   loadChatDetails,
   startNewChat,
-  ChatMessage,
   sendMessageToChat,
 } from "@/lib/server";
+import { ChatMessage, ChatState } from "@/lib/dbSchemas";
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { addMessageToLastAgentChat, updateLastMessage } from "@/lib/chatState";
 
 interface ChatContextType {
   chatSummaries: ChatSummary[];
-  currentChat: ChatDetail | null;
+  currentChat: ChatState | null;
   selectChat: (chat: ChatSummary) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   isProcessingUserMessage: boolean;
@@ -30,7 +30,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
-  const [currentChat, setCurrentChat] = useState<ChatDetail | null>(null);
+  const [currentChat, setCurrentChat] = useState<ChatState | null>(null);
   const [isProcessingUserMessage, setIsProcessingUserMessage] = useState(false);
 
   // On mount, initialize chats
@@ -46,19 +46,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentChat(await loadChatDetails(today));
       } else {
         const { chat, welcomeMessageStream } = await startNewChat();
-        setCurrentChat(chat);
         setChatSummaries((prev) => [...prev, { id: today }]);
         setIsProcessingUserMessage(true);
         const currentAssistantMessage: ChatMessage = {
           role: "assistant",
           content: "",
         };
+
+        let updatedChat = addMessageToLastAgentChat(
+          chat,
+          currentAssistantMessage
+        );
+
+        setCurrentChat(updatedChat);
+
         for await (const chunk of welcomeMessageStream) {
           currentAssistantMessage.content += chunk;
-          setCurrentChat({
-            ...chat,
-            messages: [currentAssistantMessage],
-          });
+          updatedChat = updateLastMessage(updatedChat, currentAssistantMessage);
+          setCurrentChat(updatedChat);
         }
         setIsProcessingUserMessage(false);
       }
@@ -68,13 +73,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Function to select a chat from the sidebar by loading its details
   const selectChat = async (chat: ChatSummary) => {
-    try {
-      const fullChat = await loadChatDetails(chat.id);
-      setCurrentChat(fullChat);
-    } catch (e) {
-      console.error(e);
-      alert("Chat details not found.");
+    if (chat.id === currentChat?.id) {
+      return;
     }
+    const fullChat = await loadChatDetails(chat.id);
+    setCurrentChat(fullChat);
   };
 
   // Function to send a user message, then simulate an assistant response
@@ -84,32 +87,48 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Immediately add user message to state
     const userMessage: ChatMessage = { role: "user", content: text };
-    const previousMessages = [...currentChat.messages, userMessage];
-    setCurrentChat({
-      ...currentChat,
-      messages: previousMessages,
-    });
+    let updatedChat = addMessageToLastAgentChat(currentChat!, userMessage);
+    setCurrentChat(updatedChat);
 
-    const stream = await sendMessageToChat(text, currentChat);
+    const stream = await sendMessageToChat(text, currentChat.id);
     let currentAssistantMessage = "";
+    updatedChat = addMessageToLastAgentChat(updatedChat, {
+      role: "assistant",
+      content: "",
+    });
 
     // Update assistant message as stream comes in
     for await (const chunk of stream) {
       currentAssistantMessage += chunk;
-      setCurrentChat({
-        ...currentChat,
-        messages: [
-          ...previousMessages,
-          { role: "assistant", content: currentAssistantMessage },
-        ],
+      updatedChat = updateLastMessage(updatedChat, {
+        role: "assistant",
+        content: currentAssistantMessage,
       });
+      setCurrentChat(updatedChat);
     }
     setIsProcessingUserMessage(false);
   };
 
-  const canChatConclude =
-    (currentChat?.messages ?? []).filter((msg) => msg.role === "assistant")
-      .length > 0 && !isProcessingUserMessage;
+  const canChatConclude = () => {
+    if (!currentChat || isProcessingUserMessage) {
+      return false;
+    }
+
+    const lastAgentChat = currentChat.agentChats.at(-1);
+    if (!lastAgentChat) {
+      return false;
+    }
+
+    const userMessageCount = lastAgentChat.messages.filter(
+      (msg) => msg.role === "user"
+    ).length;
+
+    if (userMessageCount === 0) {
+      return false;
+    }
+
+    return true;
+  };
 
   const concludeChat = async () => {};
 
@@ -121,7 +140,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         selectChat,
         sendMessage,
         isProcessingUserMessage,
-        canChatConclude,
+        canChatConclude: canChatConclude(),
         concludeChat,
       }}
     >

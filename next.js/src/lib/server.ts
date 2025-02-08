@@ -1,20 +1,11 @@
 "use server";
 
-import { Chat } from "./chat";
+import { Chat, ChatState } from "./chat";
 import { getTodayDateStr } from "./date";
 import { listKeys } from "./keyValueDB";
 
-export type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
-
 export type ChatSummary = {
   id: string; // standardized date stamp (e.g., "2023-10-11")
-};
-
-export type ChatDetail = ChatSummary & {
-  messages: ChatMessage[];
 };
 
 export async function fetchOldChats(): Promise<ChatSummary[]> {
@@ -23,26 +14,26 @@ export async function fetchOldChats(): Promise<ChatSummary[]> {
 }
 
 export async function startNewChat(): Promise<{
-  chat: ChatDetail;
+  chat: ChatState;
   welcomeMessageStream: AsyncGenerator<string>;
 }> {
   const chatId = getTodayDateStr();
   const { chat, welcomeMessageStream } = await Chat.create(chatId);
   return {
-    chat: chat.getChatDetails(),
+    chat: chat.state,
     welcomeMessageStream,
   };
 }
 
 export async function* sendMessageToChat(
   content: string,
-  chatSummary: ChatSummary
+  chatId: string
 ): AsyncGenerator<string> {
-  const chat = await Chat.loadOrThrow(chatSummary.id);
+  const chat = await Chat.loadOrThrow(chatId);
   yield* await chat.processUserMessage(content);
 }
 
-export async function loadChatDetails(chatId: string): Promise<ChatDetail> {
+export async function loadChatDetails(chatId: string): Promise<ChatState> {
   const chat = await Chat.loadOrThrow(chatId);
-  return chat.getChatDetails();
+  return chat.state;
 }

@@ -1,7 +1,6 @@
-import { ChatDetail, ChatMessage } from "./server";
 import { z } from "zod";
 import { getValue, setValue } from "./keyValueDB";
-import { AGENTS, ALL_AGENTS, DIARY_AGENT } from "./agent";
+import { ALL_AGENTS, JOURNALING_AGENT } from "./agent";
 import { ChatStateZod } from "./dbSchemas";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
@@ -32,27 +31,29 @@ export class Chat {
     }
 
     const { stream: welcomeMessageStream, fullMessagePromise } =
-      await DIARY_AGENT.getWelcomeMessage();
+      await JOURNALING_AGENT.getWelcomeMessage();
     const newState: ChatState = {
+      id,
       version: "1",
-      history: [
+      agentChats: [
         {
-          agentId: "diary",
+          agentId: "journaling",
           messages: [],
-          completed: false,
+          concluded: false,
         },
       ],
-      agentsLinedup: [],
     };
     const newChat = new Chat(id, newState);
     newChat.save();
 
     fullMessagePromise.then((welcomeMessage) => {
-      newChat.state.history[0].messages.push({
-        role: "assistant",
-        content: welcomeMessage,
-      });
-      newChat.save();
+      setTimeout(() => {
+        newChat.state.agentChats[0].messages.push({
+          role: "assistant",
+          content: welcomeMessage,
+        });
+        newChat.save();
+      }, 1);
     });
     return { chat: newChat, welcomeMessageStream };
   }
@@ -61,32 +62,31 @@ export class Chat {
     setValue(this.id, "chatState", this.state);
   }
 
-  private async onDiaryCompleted(messages: ChatMessage[]) {
-    // get all messages from diary agent and extract entries for each agent
-    const diaryRelatedAgents = new Set<string>();
-    for (const agent of AGENTS) {
-      const hasEntry = await agent.extractEntryFromChat(messages);
-      if (hasEntry) {
-        diaryRelatedAgents.add(agent.id);
-      }
-    }
+  //   private async onDiaryCompleted(messages: ChatMessage[]) {
+  //     // get all messages from diary agent and extract entries for each agent
+  //     const diaryRelatedAgents = new Set<string>();
+  //     for (const agent of AGENTS) {
+  //       const hasEntry = await agent.extractEntryFromChat(messages);
+  //       if (hasEntry) {
+  //         diaryRelatedAgents.add(agent.id);
+  //       }
+  //     }
 
-    // get agents with pressure and related agents
-    const today = new Date();
-    const linedupAgents = AGENTS.map((a) => ({
-      id: a.id,
-      pressure:
-        a.checkInPressure(today) + (diaryRelatedAgents.has(a.id) ? 1 : 0),
-    }))
-      .filter((a) => a.pressure > 1)
-      .sort((a, b) => b.pressure - a.pressure)
-      .map((a) => a.id);
+  //     // get agents with pressure and related agents
+  //     const today = new Date();
+  //     const linedupAgents = AGENTS.map((a) => ({
+  //       id: a.id,
+  //       pressure:
+  //         a.checkInPressure(today) + (diaryRelatedAgents.has(a.id) ? 1 : 0),
+  //     }))
+  //       .filter((a) => a.pressure > 1)
+  //       .sort((a, b) => b.pressure - a.pressure)
+  //       .map((a) => a.id);
 
-    this.state.agentsLinedup = linedupAgents;
-  }
+  //   }
 
   async processUserMessage(message: string): Promise<AsyncGenerator<string>> {
-    const agentHistory = this.state.history.at(-1)!;
+    const agentHistory = this.state.agentChats.at(-1)!;
     const agentMessages = agentHistory.messages;
     // add message to history
     agentMessages.push({
@@ -112,12 +112,5 @@ export class Chat {
     });
 
     return stream;
-  }
-
-  getChatDetails(): ChatDetail {
-    return {
-      id: this.id,
-      messages: this.state.history.flatMap((h) => h.messages),
-    };
   }
 }

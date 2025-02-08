@@ -1,31 +1,39 @@
 import { z } from "zod";
 
-export const AgentHistoryZod = z.object({
-  agentId: z.string(),
-  messages: z.array(
-    z.object({
-      role: z.enum(["user", "assistant"]),
-      content: z.string(),
-    })
-  ),
-  completed: z.boolean(),
+export const ChatMessageZod = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
 });
+
+export type ChatMessage = z.infer<typeof ChatMessageZod>;
+
+export const AgentChatZod = z.object({
+  agentId: z.string(),
+  messages: z.array(ChatMessageZod),
+  concluded: z.boolean(),
+});
+
+export type AgentChat = z.infer<typeof AgentChatZod>;
 
 export const ChatStateZod = z.object({
+  id: z.string(),
   version: z.literal("1"),
-  history: z.array(AgentHistoryZod),
-  agentsLinedup: z.array(z.string()),
+  agentChats: z.array(AgentChatZod),
 });
 
-export const AgentEntry = z.object({
+export type ChatState = z.infer<typeof ChatStateZod>;
+
+export const AgentEntryZod = z.object({
   date: z.string(),
   content: z.string(),
 });
 
 export const AgentStateZod = z.object({
-  allEntries: z.array(AgentEntry),
+  allEntries: z.array(AgentEntryZod),
   lastCheckInDate: z.string().nullable(),
 });
+
+export type AgentState = z.infer<typeof AgentStateZod>;
 
 // Dictionary of valid Zod types.
 // You can extend this with additional types.

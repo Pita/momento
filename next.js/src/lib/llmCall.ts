@@ -1,9 +1,9 @@
 import ollama, { Tool } from "ollama";
-import { ChatMessage } from "./server";
 import { Message as OllamaMessage } from "ollama";
 import yaml from "js-yaml";
+import { ChatMessage } from "./dbSchemas";
 
-export const SMART_MODEL = "llama3.1:8b";
+export const SMART_MODEL = "llama3.2:3b";
 export const FAST_MODEL = "llama3.2:1b";
 export const REASONING_MODEL = "deepseek-r1:8b";
 

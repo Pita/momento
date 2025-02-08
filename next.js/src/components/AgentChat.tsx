@@ -3,27 +3,36 @@ import { useChat } from "../context/ChatContext";
 import Spinning from "./spinning.svg";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
+import { AgentChat as AgentChatType } from "@/lib/dbSchemas";
+import { AGENT_CONSTANTS } from "@/lib/agentConstants";
 
-const ChatHistory: React.FC = () => {
-  const { currentChat, isProcessingUserMessage } = useChat();
+interface AgentChatProps {
+  agentChat: AgentChatType;
+}
+
+const AgentChat: React.FC<AgentChatProps> = ({ agentChat }: AgentChatProps) => {
+  const { isProcessingUserMessage } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentChat?.messages]);
+  }, [agentChat?.messages]);
 
   // Show the loading bubble if a user message is processing and the last message isn't an assistant.
   const shouldShowLoadingBubble =
     isProcessingUserMessage &&
-    (!currentChat ||
-      currentChat.messages.length === 0 ||
-      currentChat.messages[currentChat.messages.length - 1].role !==
-        "assistant");
+    (!agentChat ||
+      agentChat.messages.length === 0 ||
+      agentChat.messages[agentChat.messages.length - 1].role !== "assistant");
 
   return (
-    <div className="flex-grow overflow-y-scroll space-y-2 w-full">
+    <div className="space-y-2">
       <div className="max-w-4xl mx-auto space-y-4 p-4">
-        {currentChat?.messages.map((msg, index) => (
+        <h1 className="text-2xl font-bold text-center">
+          {AGENT_CONSTANTS[agentChat.agentId].name}
+        </h1>
+
+        {agentChat?.messages.map((msg, index) => (
           <div
             key={index}
             className={`p-2 rounded-lg w-fit max-w-[70%] prose prose-base ${
@@ -54,4 +63,4 @@ const ChatHistory: React.FC = () => {
   );
 };
 
-export default ChatHistory;
+export default AgentChat;

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { ChatProvider } from "../context/ChatContext";
 import ChatSidebar from "../components/ChatSidebar";
-import ChatHistory from "../components/ChatHistory";
+import AgentChats from "../components/AgentChats";
 import ChatInput from "../components/ChatInput";
 
 export default function Home() {
@@ -43,7 +43,7 @@ export default function Home() {
             </button>
             <span className="font-bold">Chat</span>
           </div>
-          <ChatHistory />
+          <AgentChats />
           <ChatInput />
         </main>
       </div>
