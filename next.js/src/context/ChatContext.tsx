@@ -18,6 +18,8 @@ interface ChatContextType {
   selectChat: (chat: ChatSummary) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   isProcessingUserMessage: boolean;
+  canChatConclude: boolean;
+  concludeChat: () => Promise<void>;
 }
 
 // Create the context
@@ -105,6 +107,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsProcessingUserMessage(false);
   };
 
+  const canChatConclude =
+    (currentChat?.messages ?? []).filter((msg) => msg.role === "assistant")
+      .length > 0 && !isProcessingUserMessage;
+
+  const concludeChat = async () => {};
+
   return (
     <ChatContext.Provider
       value={{
@@ -113,6 +121,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         selectChat,
         sendMessage,
         isProcessingUserMessage,
+        canChatConclude,
+        concludeChat,
       }}
     >
       {children}

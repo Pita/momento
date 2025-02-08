@@ -22,17 +22,23 @@ const ChatHistory: React.FC = () => {
 
   return (
     <div className="flex-grow overflow-y-scroll space-y-2 w-full">
-      <div className="max-w-3xl mx-auto space-y-4 p-4">
+      <div className="max-w-4xl mx-auto space-y-4 p-4">
         {currentChat?.messages.map((msg, index) => (
           <div
             key={index}
-            className={`p-2 rounded-lg max-w-[70%] prose prose-base ${
+            className={`p-2 rounded-lg w-fit max-w-[70%] prose prose-base ${
               msg.role === "user"
-                ? "bg-blue-500 text-white self-end ml-auto"
+                ? "bg-blue-100 text-black self-end ml-auto text-right"
                 : "bg-gray-200 text-black self-start mr-auto"
             }`}
           >
-            <ReactMarkdown>{msg.content.replaceAll("• ", "- ")}</ReactMarkdown>
+            {msg.role === "assistant" ? (
+              <ReactMarkdown>
+                {msg.content.replaceAll("• ", "- ")}
+              </ReactMarkdown>
+            ) : (
+              msg.content
+            )}
           </div>
         ))}
 
