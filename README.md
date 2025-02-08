@@ -28,14 +28,14 @@ npm
 ### Debian/Ubuntu
 ```
   sudo apt-get install ollama
-  echo llama3.1 llama3.2 deepseek-r1 | xargs -n1 ollama pull
+  echo llama3.1:8b llama3.2:1b deepseek-r1:8b | xargs -n1 ollama pull
   git clone https://github.com/Pita/momento.git
   cd momento/next.js; npm install; npm run dev
 ```
 ### MacOS
 ```
   brew install ollama
-  echo llama3.1 llama3.2 deepseek-r1 | xargs -n1 ollama pull
+  echo llama3.1:8b llama3.2:1b deepseek-r1:8b | xargs -n1 ollama pull
   git clone https://github.com/Pita/momento.git
   cd momento/next.js; npm install; npm run dev
 ```
@@ -43,9 +43,9 @@ npm
 
   Install https://ollama.com/download/OllamaSetup.exe
 ```
-  ollama pull llama3.1 
-  ollama pull llama3.2
-  ollama pull deepseak-r1
+  ollama pull llama3.1:8b
+  ollama pull llama3.2:1b
+  ollama pull deepseak-r1:8b
   git clone https://github.com/Pita/momento.git
   cd momento/next.js
   npm install
