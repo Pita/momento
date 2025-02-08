@@ -17,9 +17,41 @@ The goal is it to have a web app which that helps you write diary entries and gi
 - Maybe memory retrival using a vector db
 - Maybe voice mode via local TTS and STT (could talk to it on a walk)
 
-## Setup
+## Install
 
 **Important: This is a work in progress, the DB might change in incompatible ways.**
+## Prerequisite
+```
+npm
+```
 
-- Setup ollama and pull the models mentioned in src/lib/llmCall.ts
-- In the next.js folder run `npm install; npm run dev` then go to http://localhost:3000
+### Debian/Ubuntu
+```
+  sudo apt-get install ollama
+  echo llama3.1 llama3.2 deepseek-r1 | xargs -n1 ollama pull
+  git clone https://github.com/Pita/momento.git
+  cd momento/next.js; npm install; npm run dev
+```
+### MacOS
+```
+  brew install ollama
+  echo llama3.1 llama3.2 deepseek-r1 | xargs -n1 ollama pull
+  git clone https://github.com/Pita/momento.git
+  cd momento/next.js; npm install; npm run dev
+```
+### Windows
+
+  Install https://ollama.com/download/OllamaSetup.exe
+```
+  ollama pull llama3.1 
+  ollama pull llama3.2
+  ollama pull deepseak-r1
+  git clone https://github.com/Pita/momento.git
+  cd momento/next.js
+  npm install
+  npm run dev
+```
+
+## Usage
+
+Visit http://localhost:3000
