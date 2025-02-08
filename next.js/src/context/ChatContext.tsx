@@ -1,5 +1,6 @@
 "use client";
 
+import { getTodayDateStr } from "@/lib/date";
 import {
   ChatSummary,
   ChatDetail,
@@ -8,7 +9,6 @@ import {
   startNewChat,
   ChatMessage,
   sendMessageToChat,
-  saveWelcomeMessage,
 } from "@/lib/server";
 import React, { createContext, useContext, useState, useEffect } from "react";
 
@@ -37,7 +37,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       const summaries = await fetchOldChats();
       setChatSummaries(summaries);
 
-      const today = new Date().toISOString().split("T")[0];
+      const today = getTodayDateStr();
       // Try to find today's chat detail in the in-memory storage
       const todaysChatExists = summaries.find((chat) => chat.id === today);
       if (todaysChatExists) {
@@ -59,7 +59,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
           });
         }
         setIsProcessingUserMessage(false);
-        saveWelcomeMessage(today, currentAssistantMessage.content);
       }
     }
     initChat();

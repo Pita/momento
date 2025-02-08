@@ -4,7 +4,7 @@ import { getValue, setValue } from "./keyValueDB";
 import { differenceInDays } from "date-fns";
 import {
   callOllama,
-  callOllamaStream,
+  OllamaResult,
   REASONING_MODEL,
   SMART_MODEL,
 } from "./llmCall";
@@ -90,18 +90,21 @@ export class Agent {
       "Here is the dialog:\n" +
       chatStr;
 
-    const response = await callOllama({
+    const { fullMessagePromise } = await callOllama({
       model: REASONING_MODEL,
       messages: [{ role: "user", content: prompt }],
       system: this.systemPrompt,
     });
+    const fullMessage = await fullMessagePromise;
 
     const thinkEndStr = "</think>";
-    const thinkEndIndex = response.indexOf(thinkEndStr);
+    const thinkEndIndex = fullMessage.indexOf(thinkEndStr);
     if (thinkEndIndex === -1) {
       throw new Error("No </think> found in response");
     }
-    const decision = response.slice(thinkEndIndex + thinkEndStr.length).trim();
+    const decision = fullMessage
+      .slice(thinkEndIndex + thinkEndStr.length)
+      .trim();
 
     const isEntry = !decision.toLowerCase().includes("not_relevant");
     if (isEntry) {
@@ -116,13 +119,13 @@ export class Agent {
     return isEntry;
   }
 
-  async getWelcomeMessageStream(): Promise<AsyncGenerator<string>> {
+  async getWelcomeMessage(): Promise<OllamaResult> {
     const fullSystemPrompt =
       this.systemPrompt +
       (await this.getContextString()) +
       "\nOpen the conversation for today";
 
-    return callOllamaStream({
+    return await callOllama({
       model: SMART_MODEL,
       messages: [
         {
@@ -133,13 +136,11 @@ export class Agent {
     });
   }
 
-  async streamNewAssistantMessage(
-    messages: ChatMessage[]
-  ): Promise<AsyncGenerator<string>> {
+  async getNewAssistantMessage(messages: ChatMessage[]): Promise<OllamaResult> {
     const fullSystemPrompt =
       this.systemPrompt + (await this.getContextString());
 
-    return callOllamaStream({
+    return await callOllama({
       model: SMART_MODEL,
       messages: messages,
       system: fullSystemPrompt,

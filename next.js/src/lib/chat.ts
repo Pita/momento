@@ -1,7 +1,7 @@
 import { ChatDetail, ChatMessage } from "./server";
 import { z } from "zod";
 import { getValue, setValue } from "./keyValueDB";
-import { Agent, AGENTS, ALL_AGENTS, DIARY_AGENT } from "./agent";
+import { AGENTS, ALL_AGENTS, DIARY_AGENT } from "./agent";
 import { ChatStateZod } from "./dbSchemas";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
@@ -31,7 +31,8 @@ export class Chat {
       throw new Error(`Chat ${id} already exists`);
     }
 
-    const welcomeMessageStream = await DIARY_AGENT.getWelcomeMessageStream();
+    const { stream: welcomeMessageStream, fullMessagePromise } =
+      await DIARY_AGENT.getWelcomeMessage();
     const newState: ChatState = {
       version: "1",
       history: [
@@ -45,6 +46,14 @@ export class Chat {
     };
     const newChat = new Chat(id, newState);
     newChat.save();
+
+    fullMessagePromise.then((welcomeMessage) => {
+      newChat.state.history[0].messages.push({
+        role: "assistant",
+        content: welcomeMessage,
+      });
+      newChat.save();
+    });
     return { chat: newChat, welcomeMessageStream };
   }
 
@@ -76,81 +85,33 @@ export class Chat {
     this.state.agentsLinedup = linedupAgents;
   }
 
-  async *processUserMessage(message: string): AsyncGenerator<string> {
-    const firstAgentHistory = this.state.history.at(-1)!;
-    const firstAgentMessages = firstAgentHistory.messages;
+  async processUserMessage(message: string): Promise<AsyncGenerator<string>> {
+    const agentHistory = this.state.history.at(-1)!;
+    const agentMessages = agentHistory.messages;
     // add message to history
-    firstAgentMessages.push({
+    agentMessages.push({
       role: "user",
       content: message,
     });
 
-    const firstAgent = ALL_AGENTS[firstAgentHistory.agentId];
-    if (!firstAgent) {
-      throw new Error(`Agent ${firstAgentHistory.agentId} not found`);
+    const agent = ALL_AGENTS[agentHistory.agentId];
+    if (!agent) {
+      throw new Error(`Agent ${agentHistory.agentId} not found`);
     }
 
-    const firstAgentGenerator = await firstAgent.streamNewAssistantMessage(
-      firstAgentMessages
+    const { stream, fullMessagePromise } = await agent.getNewAssistantMessage(
+      agentMessages
     );
 
-    const hasConcluded = firstAgentGenerator === null;
-    if (!hasConcluded) {
-      let assistantMessage = "";
-      for await (const chunk of firstAgentGenerator) {
-        assistantMessage += chunk;
-        yield chunk;
-      }
-
-      firstAgentMessages.push({
+    fullMessagePromise.then((newAssistantMessage) => {
+      agentMessages.push({
         role: "assistant",
-        content: assistantMessage,
+        content: newAssistantMessage,
       });
-
       this.save();
-
-      return;
-    }
-
-    firstAgentHistory.completed = true;
-    if (firstAgent.id === "diary") {
-      await this.onDiaryCompleted(firstAgentMessages);
-    }
-
-    const secondAgentId = this.state.agentsLinedup.shift();
-    if (!secondAgentId) {
-      yield "That's all for now. Goodbye!";
-      return;
-    }
-
-    const secondAgent = ALL_AGENTS[secondAgentId];
-    if (!secondAgent) {
-      throw new Error(`Agent ${secondAgentId} not found`);
-    }
-
-    let secondAssistantMessage = "";
-
-    const secondAgentGenerator = await secondAgent.streamNewAssistantMessage(
-      []
-    );
-
-    for await (const chunk of secondAgentGenerator) {
-      secondAssistantMessage += chunk;
-      yield chunk;
-    }
-
-    this.state.history.push({
-      agentId: secondAgentId,
-      messages: [
-        {
-          role: "assistant",
-          content: secondAssistantMessage,
-        },
-      ],
-      completed: false,
     });
 
-    this.save();
+    return stream;
   }
 
   getChatDetails(): ChatDetail {
