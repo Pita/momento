@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { getValue, setValue } from "./keyValueDB";
 import { ALL_AGENTS, JOURNALING_AGENT } from "./agent";
-import { ChatStateZod } from "./dbSchemas";
+import { AgentSuggestion, ChatStateZod } from "./dbSchemas";
+import { callOllamaToString } from "./llmCall";
+import { FAST_MODEL } from "./llmCall";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
 
@@ -42,6 +44,7 @@ export class Chat {
           concluded: false,
         },
       ],
+      agentsRelevantToToday: [],
     };
     const newChat = new Chat(id, newState);
     newChat.save();
@@ -62,28 +65,114 @@ export class Chat {
     setValue(this.id, "chatState", this.state);
   }
 
-  //   private async onDiaryCompleted(messages: ChatMessage[]) {
-  //     // get all messages from diary agent and extract entries for each agent
-  //     const diaryRelatedAgents = new Set<string>();
-  //     for (const agent of AGENTS) {
-  //       const hasEntry = await agent.extractEntryFromChat(messages);
-  //       if (hasEntry) {
-  //         diaryRelatedAgents.add(agent.id);
-  //       }
-  //     }
+  async concludeAgentChat(): Promise<void> {
+    const lastAgentChat = this.state.agentChats.at(-1)!;
+    lastAgentChat.concluded = true;
+    this.save();
 
-  //     // get agents with pressure and related agents
-  //     const today = new Date();
-  //     const linedupAgents = AGENTS.map((a) => ({
-  //       id: a.id,
-  //       pressure:
-  //         a.checkInPressure(today) + (diaryRelatedAgents.has(a.id) ? 1 : 0),
-  //     }))
-  //       .filter((a) => a.pressure > 1)
-  //       .sort((a, b) => b.pressure - a.pressure)
-  //       .map((a) => a.id);
+    const agent = ALL_AGENTS[lastAgentChat.agentId];
+    if (!agent) {
+      throw new Error(`Agent ${lastAgentChat.agentId} not found`);
+    }
 
-  //   }
+    const entry = await agent.extractEntryFromChat(lastAgentChat.messages);
+    if (lastAgentChat.agentId === "journaling") {
+      await this.createAgentsRelevantToToday(entry);
+    }
+  }
+
+  private getAgentsWithOverdueCheckin(): string[] {
+    const today = new Date();
+    return Object.values(ALL_AGENTS)
+      .map((a) => ({ id: a.id, pressure: a.checkInPressure(today) }))
+      .filter((a) => a.pressure > 1)
+      .sort((a, b) => b.pressure - a.pressure)
+      .map((a) => a.id);
+  }
+
+  private getAgentsWithNoCheckin(): string[] {
+    return Object.values(ALL_AGENTS)
+      .filter((a) => a.state.lastCheckInDate === null)
+      .map((a) => a.id);
+  }
+
+  private async createAgentsRelevantToToday(entry: string): Promise<void> {
+    const agentsAvailable = Object.values(ALL_AGENTS);
+
+    const agents = agentsAvailable.map((a) => ({
+      id: a.id,
+      description: a.systemPrompt,
+    }));
+
+    const prompt =
+      "Return a list of up to 3 coaches that can help the user based on today's journal entry. Use a bullet point list and only return the coach ids." +
+      "\n\nEntry:\n''' \n" +
+      entry +
+      "\n'''\n" +
+      "Here is the list of coaches and their descriptions:" +
+      "\n" +
+      JSON.stringify(agents);
+
+    const response = await callOllamaToString({
+      model: FAST_MODEL,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const agentIds = agentsAvailable
+      .filter((a) => response.includes(a.id))
+      .map((a) => a.id);
+
+    this.state.agentsRelevantToToday = agentIds;
+    this.save();
+  }
+
+  getAgentSuggestions(): AgentSuggestion[] {
+    const agentsRelevantToToday = this.state.agentsRelevantToToday;
+    const agentsWithOverdueCheckin = this.getAgentsWithOverdueCheckin();
+    const agentsWithNoCheckin = this.getAgentsWithNoCheckin();
+
+    const suggestions: AgentSuggestion[] = [];
+    const agentsCompleted = this.state.agentChats
+      .filter((a) => a.concluded)
+      .map((a) => a.agentId);
+
+    const agentsIDsUsed = new Set<string>(agentsCompleted);
+    const agentSources: {
+      agents: string[];
+      reason: AgentSuggestion["reason"];
+    }[] = [
+      { agents: agentsRelevantToToday, reason: "relevantToToday" },
+      { agents: agentsWithOverdueCheckin, reason: "overdueCheckin" },
+      { agents: agentsWithNoCheckin, reason: "firstMeet" },
+    ];
+
+    for (const { agents, reason } of agentSources) {
+      for (const agentId of agents) {
+        if (!agentsIDsUsed.has(agentId)) {
+          suggestions.push({ agentId, reason });
+          agentsIDsUsed.add(agentId);
+        }
+      }
+    }
+
+    return suggestions;
+  }
+
+  async startAgentChat(agentId: string): Promise<void> {
+    const agent = ALL_AGENTS[agentId];
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    if (this.state.agentChats.some((chat) => chat.agentId === agentId)) {
+      throw new Error(`Agent chat for agent ${agentId} already exists`);
+    }
+    this.state.agentChats.push({
+      agentId,
+      messages: [],
+      concluded: false,
+    });
+    this.save();
+  }
 
   async processUserMessage(message: string): Promise<AsyncGenerator<string>> {
     const agentHistory = this.state.agentChats.at(-1)!;

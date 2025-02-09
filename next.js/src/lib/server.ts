@@ -2,6 +2,7 @@
 
 import { Chat, ChatState } from "./chat";
 import { getTodayDateStr } from "./date";
+import { AgentSuggestion } from "./dbSchemas";
 import { listKeys } from "./keyValueDB";
 
 export type ChatSummary = {
@@ -36,4 +37,16 @@ export async function* sendMessageToChat(
 export async function loadChatDetails(chatId: string): Promise<ChatState> {
   const chat = await Chat.loadOrThrow(chatId);
   return chat.state;
+}
+
+export async function concludeLastAgentChat(chatId: string): Promise<void> {
+  const chat = await Chat.loadOrThrow(chatId);
+  await chat.concludeAgentChat();
+}
+
+export async function getAgentSuggestions(
+  chatId: string
+): Promise<AgentSuggestion[]> {
+  const chat = await Chat.loadOrThrow(chatId);
+  return chat.getAgentSuggestions();
 }

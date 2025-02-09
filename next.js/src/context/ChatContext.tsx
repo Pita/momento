@@ -7,17 +7,24 @@ import {
   loadChatDetails,
   startNewChat,
   sendMessageToChat,
+  concludeLastAgentChat,
 } from "@/lib/server";
 import { ChatMessage, ChatState } from "@/lib/dbSchemas";
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { addMessageToLastAgentChat, updateLastMessage } from "@/lib/chatState";
 
+type ChatLifecycleState =
+  | "initial"
+  | "ready"
+  | "sending"
+  | "concluding"
+  | "concluded";
 interface ChatContextType {
   chatSummaries: ChatSummary[];
   currentChat: ChatState | null;
   selectChat: (chat: ChatSummary) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
-  isProcessingUserMessage: boolean;
+  chatLifecycleState: ChatLifecycleState;
   canChatConclude: boolean;
   concludeChat: () => Promise<void>;
 }
@@ -31,7 +38,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
   const [currentChat, setCurrentChat] = useState<ChatState | null>(null);
-  const [isProcessingUserMessage, setIsProcessingUserMessage] = useState(false);
+  const [chatLifecycleState, setChatLifecycleState] =
+    useState<ChatLifecycleState>("initial");
 
   // On mount, initialize chats
   useEffect(() => {
@@ -44,10 +52,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       const todaysChatExists = summaries.find((chat) => chat.id === today);
       if (todaysChatExists) {
         setCurrentChat(await loadChatDetails(today));
+        setChatLifecycleState("ready");
       } else {
         const { chat, welcomeMessageStream } = await startNewChat();
         setChatSummaries((prev) => [...prev, { id: today }]);
-        setIsProcessingUserMessage(true);
+        setChatLifecycleState("sending");
         const currentAssistantMessage: ChatMessage = {
           role: "assistant",
           content: "",
@@ -65,7 +74,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
           updatedChat = updateLastMessage(updatedChat, currentAssistantMessage);
           setCurrentChat(updatedChat);
         }
-        setIsProcessingUserMessage(false);
+        setChatLifecycleState("ready");
       }
     }
     initChat();
@@ -83,7 +92,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   // Function to send a user message, then simulate an assistant response
   const sendMessage = async (text: string) => {
     if (!text.trim() || !currentChat) return;
-    setIsProcessingUserMessage(true);
+    setChatLifecycleState("sending");
 
     // Immediately add user message to state
     const userMessage: ChatMessage = { role: "user", content: text };
@@ -106,11 +115,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       setCurrentChat(updatedChat);
     }
-    setIsProcessingUserMessage(false);
+    setChatLifecycleState("ready");
   };
 
   const canChatConclude = () => {
-    if (!currentChat || isProcessingUserMessage) {
+    if (!currentChat || chatLifecycleState !== "ready") {
       return false;
     }
 
@@ -130,7 +139,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
-  const concludeChat = async () => {};
+  const getConcludeChat = async () => {
+    if (!currentChat || chatLifecycleState !== "ready") {
+      return;
+    }
+    setCurrentChat({
+      ...currentChat,
+      agentChats: [
+        ...currentChat.agentChats.slice(0, -1),
+        {
+          ...currentChat.agentChats.at(-1)!,
+          concluded: true,
+        },
+      ],
+    });
+    setChatLifecycleState("concluding");
+    await concludeLastAgentChat(currentChat.id);
+    setChatLifecycleState("concluded");
+  };
 
   return (
     <ChatContext.Provider
@@ -139,9 +165,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         currentChat,
         selectChat,
         sendMessage,
-        isProcessingUserMessage,
+        chatLifecycleState,
         canChatConclude: canChatConclude(),
-        concludeChat,
+        concludeChat: getConcludeChat,
       }}
     >
       {children}

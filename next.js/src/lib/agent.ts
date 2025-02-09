@@ -1,9 +1,10 @@
 import { getValue, setValue } from "./keyValueDB";
 import { differenceInDays } from "date-fns";
 import {
-  callOllama,
+  callOllamaStream,
+  callOllamaToString,
+  FAST_MODEL,
   OllamaResult,
-  REASONING_MODEL,
   SMART_MODEL,
 } from "./llmCall";
 import { getTodayDateStr } from "./date";
@@ -63,58 +64,47 @@ export class Agent {
     );
   }
 
-  async extractEntryFromChat(
-    messages: ChatMessage[],
-    force: boolean = false
-  ): Promise<boolean> {
+  async extractEntryFromChat(messages: ChatMessage[]): Promise<string> {
+    const messagesWithoutLastAssistantMessage =
+      messages.at(-1)!.role === "assistant" ? messages.slice(0, -1) : messages;
+
     const chatStr =
       "\n'''\n" +
-      messages.map((m) => `${m.role}: ${m.content}`).join("\n") +
+      messagesWithoutLastAssistantMessage
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n") +
       "\n'''\n";
+
+    const userMessagesCharacterCount = messages
+      .filter((m) => m.role === "user")
+      .reduce((acc, m) => acc + m.content.length, 0);
+    const averageSentenceLength = 75;
+    const compressedSentencesCount = Math.round(
+      userMessagesCharacterCount / averageSentenceLength / 2
+    );
 
     const contextStr = await this.getContextString();
 
-    const rule = force
-      ? "Summarize the provided dialog in regards to your mission in 1-2 sentences."
-      : "Think about if the conversation contains information relevant to your mission, if yes summarize the important information in 1-2 sentences; otherwise, respond with: NOT_RELEVANT";
-
     const prompt =
-      "Your mission is: \n'''\n" +
-      this.systemPrompt +
-      "\n'''\n\n" +
-      rule +
+      `Summarize all the information the user said in the provided dialog below in roughly ${compressedSentencesCount} sentences. Use the previous notes for a better understanding of the conversation and connect to them. Answer with only the summary.` +
       "\n" +
       contextStr +
       "Here is the dialog:\n" +
       chatStr;
 
-    const { fullMessagePromise } = await callOllama({
-      model: REASONING_MODEL,
+    const fullMessage = await callOllamaToString({
+      model: FAST_MODEL,
       messages: [{ role: "user", content: prompt }],
-      system: this.systemPrompt,
     });
-    const fullMessage = await fullMessagePromise;
 
-    const thinkEndStr = "</think>";
-    const thinkEndIndex = fullMessage.indexOf(thinkEndStr);
-    if (thinkEndIndex === -1) {
-      throw new Error("No </think> found in response");
-    }
-    const decision = fullMessage
-      .slice(thinkEndIndex + thinkEndStr.length)
-      .trim();
+    this.state.allEntries.push({
+      date: getTodayDateStr(),
+      content: fullMessage,
+    });
+    this.state.allEntries.sort((a, b) => a.date.localeCompare(b.date));
+    this.save();
 
-    const isEntry = !decision.toLowerCase().includes("not_relevant");
-    if (isEntry) {
-      this.state.allEntries.push({
-        date: getTodayDateStr(),
-        content: decision,
-      });
-      this.state.allEntries.sort((a, b) => a.date.localeCompare(b.date));
-      this.save();
-    }
-
-    return isEntry;
+    return fullMessage;
   }
 
   async getWelcomeMessage(): Promise<OllamaResult> {
@@ -134,7 +124,7 @@ export class Agent {
       (await this.getContextString()) +
       "\nOpen the conversation with one sentence, use the notes from previous conversations to connect to something that happened recently.";
 
-    return await callOllama({
+    return await callOllamaStream({
       model: SMART_MODEL,
       messages: [
         {
@@ -151,7 +141,7 @@ export class Agent {
       (await this.getContextString()) +
       "\nBriefly comment on the conversation so far similar to how a good supportive friend would. Then ask 3 very short easy questions in your response, use a numbered list. Generally keep the response short and concise.";
 
-    return await callOllama({
+    return await callOllamaStream({
       model: SMART_MODEL,
       messages: messages,
       system: fullSystemPrompt,

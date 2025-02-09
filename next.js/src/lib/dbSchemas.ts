@@ -15,10 +15,21 @@ export const AgentChatZod = z.object({
 
 export type AgentChat = z.infer<typeof AgentChatZod>;
 
+export type AgentInitReason =
+  | "relevantToToday"
+  | "overdueCheckin"
+  | "firstMeet";
+
+export type AgentSuggestion = {
+  agentId: string;
+  reason: AgentInitReason;
+};
+
 export const ChatStateZod = z.object({
   id: z.string(),
   version: z.literal("1"),
   agentChats: z.array(AgentChatZod),
+  agentsRelevantToToday: z.array(z.string()),
 });
 
 export type ChatState = z.infer<typeof ChatStateZod>;

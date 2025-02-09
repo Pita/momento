@@ -11,7 +11,7 @@ interface AgentChatProps {
 }
 
 const AgentChat: React.FC<AgentChatProps> = ({ agentChat }: AgentChatProps) => {
-  const { isProcessingUserMessage } = useChat();
+  const { chatLifecycleState } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,7 +20,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ agentChat }: AgentChatProps) => {
 
   // Show the loading bubble if a user message is processing and the last message isn't an assistant.
   const shouldShowLoadingBubble =
-    isProcessingUserMessage &&
+    chatLifecycleState === "sending" &&
     (!agentChat ||
       agentChat.messages.length === 0 ||
       agentChat.messages[agentChat.messages.length - 1].role !== "assistant");

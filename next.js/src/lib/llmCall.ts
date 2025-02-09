@@ -19,7 +19,9 @@ export type OllamaResult = {
   fullMessagePromise: Promise<string>;
 };
 
-export async function callOllama(opts: CallOllamaOpts): Promise<OllamaResult> {
+export async function callOllamaStream(
+  opts: CallOllamaOpts
+): Promise<OllamaResult> {
   let combinedMessage = "";
   let resolveFullMessage!: (message: string) => void;
   const fullMessagePromise = new Promise<string>((resolve) => {
@@ -59,4 +61,18 @@ export async function callOllama(opts: CallOllamaOpts): Promise<OllamaResult> {
     stream: streamGenerator(),
     fullMessagePromise: fullMessagePromise,
   };
+}
+
+// Start Generation Here
+export async function callOllamaToString(
+  opts: CallOllamaOpts
+): Promise<string> {
+  const { stream, fullMessagePromise } = await callOllamaStream(opts);
+  // Consume the entire stream to trigger the generator
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of stream) {
+    // No operation needed; just ensure full consumption
+  }
+  // Return the concatenated full message once the stream is fully consumed
+  return await fullMessagePromise;
 }
