@@ -8,13 +8,17 @@ import {
   SMART_MODEL,
 } from "./llmCall";
 import { getTodayDateStr } from "./date";
-import { AgentState, ChatMessage } from "./dbSchemas";
+import { AgentInitReason, AgentState, ChatMessage } from "./dbSchemas";
 import { AGENT_CONSTANTS } from "./agentConstants";
 
 export type GeneratorWithDoneStatus = {
   generator: AsyncGenerator<string>;
   isDonePromise: Promise<boolean>;
 };
+
+function quoteBlock(content: string): string {
+  return `\n'''\n${content}\n'''\n`;
+}
 
 export class Agent {
   id: string;
@@ -43,32 +47,46 @@ export class Agent {
     setValue(this.id, "agentState", this.state);
   }
 
-  // TODO: will need a summarize function to not grow forever
-  async getContextString(): Promise<string> {
-    const dateStr = `\nToday is ${getTodayDateStr()}\n`;
-
+  public getHistoryString(): string | null {
     if (Object.keys(this.state.allEntries).length === 0) {
-      return dateStr;
+      return null;
     }
-    const entriesStr = Object.values(this.state.allEntries)
+
+    return Object.values(this.state.allEntries)
       .sort((a, b) => a.localeCompare(b))
       .map((content) => content)
       .join("\n");
+  }
 
-    return (
-      dateStr +
-      "\nFor context you get some notes from previous conversations:" +
-      "\n'''\n" +
-      entriesStr +
-      "\n'''\n"
-    );
+  // TODO: will need a summarize function to not grow forever
+  private async getContextString(): Promise<string> {
+    const context: string[][] = [[`Today is ${getTodayDateStr()}`]];
+
+    const journalEntries = JOURNALING_AGENT.getHistoryString();
+    const ownEntries =
+      this.id === "journaling" ? null : this.getHistoryString();
+
+    if (journalEntries) {
+      context.push([
+        "For context here are summaries of previous journal entries:",
+        quoteBlock(journalEntries),
+      ]);
+    }
+
+    if (ownEntries) {
+      context.push([
+        "Here are the summaries of previous conversations the user had with you:",
+        quoteBlock(ownEntries),
+      ]);
+    }
+
+    return context.map((c) => c.join("\n")).join("\n");
   }
 
   async summarizeChat(messages: ChatMessage[]): Promise<string> {
-    const chatStr =
-      "\n'''\n" +
-      messages.map((m) => `${m.role}: ${m.content}`).join("\n") +
-      "\n'''\n";
+    const chatStr = quoteBlock(
+      messages.map((m) => `${m.role}: ${m.content}`).join("\n")
+    );
 
     const userMessagesCharacterCount = messages
       .filter((m) => m.role === "user")
@@ -78,12 +96,9 @@ export class Agent {
       userMessagesCharacterCount / averageSentenceLength / 2
     );
 
-    const contextStr = await this.getContextString();
-
     const prompt =
       `Summarize all the information the user said in the provided dialog below in roughly ${compressedSentencesCount} sentences. Use the previous notes for a better understanding of the conversation and connect to them. Answer with only the summary.` +
       "\n" +
-      contextStr +
       "Here is the dialog:\n" +
       chatStr;
 
@@ -98,9 +113,9 @@ export class Agent {
     return fullMessage;
   }
 
-  async getWelcomeMessage(): Promise<OllamaResult> {
+  async getWelcomeMessage(initReason: AgentInitReason): Promise<OllamaResult> {
     const hasHistory = Object.keys(this.state.allEntries).length > 0;
-    if (!hasHistory) {
+    if (!hasHistory || initReason === "firstMeet") {
       const firstMessage = AGENT_CONSTANTS[this.id].firstMessage;
       return {
         stream: (async function* () {
@@ -110,10 +125,19 @@ export class Agent {
       };
     }
 
+    let rule: string;
+    if (this.id === "journaling") {
+      rule =
+        "Start the conversation by asking them about how their day today went";
+    } else {
+      rule =
+        initReason === "relevantToToday"
+          ? "Use today's journal entry to start the conversation."
+          : "Based on the last conversation you two had, start the conversation by recalling the last topic in one sentence and why it's important, then based on that ask a question.";
+    }
+
     const fullSystemPrompt =
-      this.systemPrompt +
-      (await this.getContextString()) +
-      "\nOpen the conversation with one sentence, use the notes from previous conversations to connect to something that happened recently.";
+      this.systemPrompt + "\n" + (await this.getContextString()) + "\n" + rule;
 
     return await callOllamaStream({
       model: SMART_MODEL,

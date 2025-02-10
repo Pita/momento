@@ -12,7 +12,7 @@ import {
 
 import { AGENT_CONSTANTS, AgentMaterialUIIcon } from "../lib/agentConstants";
 import { AgentSuggestion } from "../lib/dbSchemas";
-import { getAgentSuggestions } from "@/lib/server";
+import { serverGetAgentSuggestions } from "@/lib/server";
 import { useChat } from "@/context/ChatContext";
 import { IconType } from "react-icons";
 
@@ -29,20 +29,20 @@ const iconMapping: Record<AgentMaterialUIIcon, IconType> = {
 };
 
 const reasonToLabelMapping = {
-  firstMeet: "Meet first time",
+  firstMeet: "Start topic",
   relevantToToday: "Relevant to today",
   catchUp: "Catch up",
 } as const;
 
 const AgentPicker: React.FC = () => {
-  const { currentChat } = useChat();
+  const { currentChat, startAgentChat } = useChat();
   const [suggestions, setSuggestions] = useState<AgentSuggestion[] | null>(
     null
   );
 
   useEffect(() => {
     const fetchSuggestions = async () => {
-      const suggestions = await getAgentSuggestions(currentChat!.id);
+      const suggestions = await serverGetAgentSuggestions(currentChat!.id);
       console.log("suggestions", suggestions);
       setSuggestions(suggestions);
     };
@@ -84,7 +84,7 @@ const AgentPicker: React.FC = () => {
   }
 
   const onSelect = (suggestion: AgentSuggestion) => {
-    console.log("onSelect", suggestion);
+    startAgentChat(suggestion.agentId, suggestion.reason);
   };
 
   const renderSuggestion = (suggestion: AgentSuggestion, index: number) => {

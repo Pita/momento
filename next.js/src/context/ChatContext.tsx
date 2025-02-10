@@ -3,12 +3,18 @@
 import { getTodayDateStr } from "@/lib/date";
 import {
   ChatSummary,
-  fetchOldChats,
-  loadChatDetails,
-  startNewChat,
-  sendMessageToChat,
+  serverFetchOldChats,
+  serverLoadChatDetails,
+  serverStartNewChat,
+  serverSendMessageToChat,
+  serverStartAgentChat,
 } from "@/lib/server";
-import { ChatMessage, ChatState } from "@/lib/dbSchemas";
+import {
+  AgentChat,
+  AgentInitReason,
+  ChatMessage,
+  ChatState,
+} from "@/lib/dbSchemas";
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { addMessageToLastAgentChat, updateLastMessage } from "@/lib/chatState";
 
@@ -21,6 +27,10 @@ interface ChatContextType {
   chatLifecycleState: ChatLifecycleState;
   canChatConclude: boolean;
   concludeChat: () => Promise<void>;
+  startAgentChat: (
+    agentId: string,
+    initReason: AgentInitReason
+  ) => Promise<void>;
 }
 
 // Create the context
@@ -38,17 +48,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   // On mount, initialize chats
   useEffect(() => {
     async function initChat() {
-      const summaries = await fetchOldChats();
+      const summaries = await serverFetchOldChats();
       setChatSummaries(summaries);
 
       const today = getTodayDateStr();
       // Try to find today's chat detail in the in-memory storage
       const todaysChatExists = summaries.find((chat) => chat.id === today);
       if (todaysChatExists) {
-        setCurrentChat(await loadChatDetails(today));
+        setCurrentChat(await serverLoadChatDetails(today));
         setChatLifecycleState("ready");
       } else {
-        const { chat, welcomeMessageStream } = await startNewChat();
+        const { chat, welcomeMessageStream } = await serverStartNewChat();
         setChatSummaries((prev) => [...prev, { id: today }]);
         setChatLifecycleState("sending");
         const currentAssistantMessage: ChatMessage = {
@@ -79,7 +89,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     if (chat.id === currentChat?.id) {
       return;
     }
-    const fullChat = await loadChatDetails(chat.id);
+    const fullChat = await serverLoadChatDetails(chat.id);
     setCurrentChat(fullChat);
   };
 
@@ -93,7 +103,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     let updatedChat = addMessageToLastAgentChat(currentChat!, userMessage);
     setCurrentChat(updatedChat);
 
-    const stream = await sendMessageToChat(text, currentChat.id);
+    const stream = await serverSendMessageToChat(text, currentChat.id);
     let currentAssistantMessage = "";
     updatedChat = addMessageToLastAgentChat(updatedChat, {
       role: "assistant",
@@ -140,6 +150,43 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     setChatLifecycleState("concluded");
   };
 
+  const startAgentChat = async (
+    agentId: string,
+    initReason: AgentInitReason
+  ) => {
+    if (!currentChat) {
+      return;
+    }
+
+    setChatLifecycleState("sending");
+
+    const stream = await serverStartAgentChat(
+      currentChat.id,
+      agentId,
+      initReason
+    );
+
+    const newAgentChat: AgentChat = {
+      messages: [],
+      agentId,
+    };
+    let updatedChat = {
+      ...currentChat,
+      agentChats: [...currentChat.agentChats, newAgentChat],
+    };
+
+    let currentAssistantMessage = "";
+    for await (const chunk of stream) {
+      currentAssistantMessage += chunk;
+      updatedChat = updateLastMessage(updatedChat, {
+        role: "assistant",
+        content: currentAssistantMessage,
+      });
+      setCurrentChat(updatedChat);
+    }
+    setChatLifecycleState("ready");
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -150,6 +197,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         chatLifecycleState,
         canChatConclude: canChatConclude(),
         concludeChat: getConcludeChat,
+        startAgentChat,
       }}
     >
       {children}

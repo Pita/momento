@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { getValue, setValue } from "./keyValueDB";
 import { ALL_AGENTS, JOURNALING_AGENT } from "./agent";
-import { AgentSuggestion, ChatStateZod } from "./dbSchemas";
+import {
+  AgentChat,
+  AgentInitReason,
+  AgentSuggestion,
+  ChatStateZod,
+} from "./dbSchemas";
 import { callOllamaToString } from "./llmCall";
 import { FAST_MODEL } from "./llmCall";
 import { getTodayDateStr } from "./date";
@@ -34,7 +39,7 @@ export class Chat {
     }
 
     const { stream: welcomeMessageStream, fullMessagePromise } =
-      await JOURNALING_AGENT.getWelcomeMessage();
+      await JOURNALING_AGENT.getWelcomeMessage("catchUp");
     const newState: ChatState = {
       id,
       version: "1",
@@ -115,17 +120,22 @@ export class Chat {
     this.save();
   }
 
-  private getAgentsRelevantToToday(): string[] {
+  private getAgentsRelevantToToday(agentsWithNoCheckin: string[]): string[] {
     if (!this.state.agentsRelevantToToday) {
       this.createAgentsRelevantToToday();
     }
-    return this.state.agentsRelevantToToday!;
+    const agentsWithNoCheckinSet = new Set(agentsWithNoCheckin);
+    return this.state.agentsRelevantToToday!.filter(
+      (a) => !agentsWithNoCheckinSet.has(a)
+    );
   }
 
   async getAgentSuggestions(): Promise<AgentSuggestion[]> {
-    const agentsRelevantToToday = await this.getAgentsRelevantToToday();
-    const agentsWithOverdueCheckin = this.getAgentsWithOverdueCheckin();
     const agentsWithNoCheckin = this.getAgentsWithNoCheckin();
+    const agentsRelevantToToday = await this.getAgentsRelevantToToday(
+      agentsWithNoCheckin
+    );
+    const agentsWithOverdueCheckin = this.getAgentsWithOverdueCheckin();
 
     const suggestions: AgentSuggestion[] = [];
     const agentsCompleted = this.state.agentChats.map((a) => a.agentId);
@@ -152,7 +162,10 @@ export class Chat {
     return suggestions;
   }
 
-  async startAgentChat(agentId: string): Promise<void> {
+  async startAgentChat(
+    agentId: string,
+    initReason: AgentInitReason
+  ): Promise<AsyncGenerator<string>> {
     const agent = ALL_AGENTS[agentId];
     if (!agent) {
       throw new Error(`Agent ${agentId} not found`);
@@ -160,11 +173,29 @@ export class Chat {
     if (this.state.agentChats.some((chat) => chat.agentId === agentId)) {
       throw new Error(`Agent chat for agent ${agentId} already exists`);
     }
-    this.state.agentChats.push({
+    const newAgentChat: AgentChat = {
       agentId,
       messages: [],
-    });
+    };
+    this.state.agentChats.push(newAgentChat);
+
     this.save();
+
+    const { stream, fullMessagePromise } = await agent.getWelcomeMessage(
+      initReason
+    );
+
+    fullMessagePromise.then((welcomeMessage) => {
+      setTimeout(() => {
+        newAgentChat.messages.push({
+          role: "assistant",
+          content: welcomeMessage,
+        });
+        this.save();
+      }, 1);
+    });
+
+    return stream;
   }
 
   async processUserMessage(message: string): Promise<AsyncGenerator<string>> {

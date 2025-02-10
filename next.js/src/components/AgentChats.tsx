@@ -8,7 +8,10 @@ const AgentChats: React.FC = () => {
   return (
     <div className="flex-grow overflow-y-scroll space-y-2 w-full pb-10">
       {currentChat?.agentChats.map((agentChat, index) => (
-        <AgentChat key={index} agentChat={agentChat} />
+        <React.Fragment key={index}>
+          {index > 0 && <hr className="border-t-2 border-gray-200 my-4" />}
+          <AgentChat agentChat={agentChat} />
+        </React.Fragment>
       ))}
     </div>
   );

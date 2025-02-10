@@ -2,19 +2,19 @@
 
 import { Chat, ChatState } from "./chat";
 import { getTodayDateStr } from "./date";
-import { AgentSuggestion } from "./dbSchemas";
+import { AgentInitReason, AgentSuggestion } from "./dbSchemas";
 import { listKeys } from "./keyValueDB";
 
 export type ChatSummary = {
   id: string; // standardized date stamp (e.g., "2023-10-11")
 };
 
-export async function fetchOldChats(): Promise<ChatSummary[]> {
+export async function serverFetchOldChats(): Promise<ChatSummary[]> {
   const chats = listKeys("chatState");
   return chats.map((c) => ({ id: c })).sort((a, b) => b.id.localeCompare(a.id));
 }
 
-export async function startNewChat(): Promise<{
+export async function serverStartNewChat(): Promise<{
   chat: ChatState;
   welcomeMessageStream: AsyncGenerator<string>;
 }> {
@@ -26,7 +26,7 @@ export async function startNewChat(): Promise<{
   };
 }
 
-export async function* sendMessageToChat(
+export async function* serverSendMessageToChat(
   content: string,
   chatId: string
 ): AsyncGenerator<string> {
@@ -34,14 +34,25 @@ export async function* sendMessageToChat(
   yield* await chat.processUserMessage(content);
 }
 
-export async function loadChatDetails(chatId: string): Promise<ChatState> {
+export async function serverLoadChatDetails(
+  chatId: string
+): Promise<ChatState> {
   const chat = await Chat.loadOrThrow(chatId);
   return chat.state;
 }
 
-export async function getAgentSuggestions(
+export async function serverGetAgentSuggestions(
   chatId: string
 ): Promise<AgentSuggestion[]> {
   const chat = await Chat.loadOrThrow(chatId);
   return await chat.getAgentSuggestions();
+}
+
+export async function serverStartAgentChat(
+  chatId: string,
+  agentId: string,
+  initReason: AgentInitReason
+): Promise<AsyncGenerator<string>> {
+  const chat = await Chat.loadOrThrow(chatId);
+  return await chat.startAgentChat(agentId, initReason);
 }
