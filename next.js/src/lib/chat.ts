@@ -4,6 +4,7 @@ import { ALL_AGENTS, JOURNALING_AGENT } from "./agent";
 import { AgentSuggestion, ChatStateZod } from "./dbSchemas";
 import { callOllamaToString } from "./llmCall";
 import { FAST_MODEL } from "./llmCall";
+import { getTodayDateStr } from "./date";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
 
@@ -41,7 +42,6 @@ export class Chat {
         {
           agentId: "journaling",
           messages: [],
-          concluded: false,
         },
       ],
       agentsRelevantToToday: [],
@@ -65,38 +65,27 @@ export class Chat {
     setValue(this.id, "chatState", this.state);
   }
 
-  async concludeAgentChat(): Promise<void> {
-    const lastAgentChat = this.state.agentChats.at(-1)!;
-    lastAgentChat.concluded = true;
-    this.save();
-
-    const agent = ALL_AGENTS[lastAgentChat.agentId];
-    if (!agent) {
-      throw new Error(`Agent ${lastAgentChat.agentId} not found`);
-    }
-
-    const entry = await agent.extractEntryFromChat(lastAgentChat.messages);
-    if (lastAgentChat.agentId === "journaling") {
-      await this.createAgentsRelevantToToday(entry);
-    }
-  }
-
   private getAgentsWithOverdueCheckin(): string[] {
     const today = new Date();
     return Object.values(ALL_AGENTS)
       .map((a) => ({ id: a.id, pressure: a.checkInPressure(today) }))
-      .filter((a) => a.pressure > 1)
-      .sort((a, b) => b.pressure - a.pressure)
+      .filter((a) => a.pressure !== null)
+      .sort((a, b) => b.pressure! - a.pressure!)
       .map((a) => a.id);
   }
 
   private getAgentsWithNoCheckin(): string[] {
     return Object.values(ALL_AGENTS)
-      .filter((a) => a.state.lastCheckInDate === null)
+      .filter((a) => a.lastCheckInDate === undefined)
       .map((a) => a.id);
   }
 
-  private async createAgentsRelevantToToday(entry: string): Promise<void> {
+  private async createAgentsRelevantToToday(): Promise<void> {
+    const journalingEntry =
+      JOURNALING_AGENT.state.allEntries[getTodayDateStr()];
+    if (!journalingEntry) {
+      throw new Error("Journaling entry not found");
+    }
     const agentsAvailable = Object.values(ALL_AGENTS);
 
     const agents = agentsAvailable.map((a) => ({
@@ -107,7 +96,7 @@ export class Chat {
     const prompt =
       "Return a list of up to 3 coaches that can help the user based on today's journal entry. Use a bullet point list and only return the coach ids." +
       "\n\nEntry:\n''' \n" +
-      entry +
+      journalingEntry +
       "\n'''\n" +
       "Here is the list of coaches and their descriptions:" +
       "\n" +
@@ -126,15 +115,20 @@ export class Chat {
     this.save();
   }
 
-  getAgentSuggestions(): AgentSuggestion[] {
-    const agentsRelevantToToday = this.state.agentsRelevantToToday;
+  private getAgentsRelevantToToday(): string[] {
+    if (!this.state.agentsRelevantToToday) {
+      this.createAgentsRelevantToToday();
+    }
+    return this.state.agentsRelevantToToday!;
+  }
+
+  async getAgentSuggestions(): Promise<AgentSuggestion[]> {
+    const agentsRelevantToToday = await this.getAgentsRelevantToToday();
     const agentsWithOverdueCheckin = this.getAgentsWithOverdueCheckin();
     const agentsWithNoCheckin = this.getAgentsWithNoCheckin();
 
     const suggestions: AgentSuggestion[] = [];
-    const agentsCompleted = this.state.agentChats
-      .filter((a) => a.concluded)
-      .map((a) => a.agentId);
+    const agentsCompleted = this.state.agentChats.map((a) => a.agentId);
 
     const agentsIDsUsed = new Set<string>(agentsCompleted);
     const agentSources: {
@@ -169,7 +163,6 @@ export class Chat {
     this.state.agentChats.push({
       agentId,
       messages: [],
-      concluded: false,
     });
     this.save();
   }
@@ -182,6 +175,8 @@ export class Chat {
       role: "user",
       content: message,
     });
+
+    const messagesForSummary = agentMessages.slice();
 
     const agent = ALL_AGENTS[agentHistory.agentId];
     if (!agent) {
@@ -199,6 +194,10 @@ export class Chat {
       });
       this.save();
     });
+
+    (async () => {
+      await agent.summarizeChat(messagesForSummary);
+    })();
 
     return stream;
   }

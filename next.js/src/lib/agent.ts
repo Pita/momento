@@ -35,8 +35,7 @@ export class Agent {
     this.checkInPeriodDays = agent.checkInPeriodDays;
 
     this.state = getValue(this.id, "agentState") ?? {
-      allEntries: [],
-      lastCheckInDate: null,
+      allEntries: {},
     };
   }
 
@@ -48,11 +47,12 @@ export class Agent {
   async getContextString(): Promise<string> {
     const dateStr = `\nToday is ${getTodayDateStr()}\n`;
 
-    if (this.state.allEntries.length === 0) {
+    if (Object.keys(this.state.allEntries).length === 0) {
       return dateStr;
     }
-    const entriesStr = this.state.allEntries
-      .map((entry) => `${entry.date}: ${entry.content}`)
+    const entriesStr = Object.values(this.state.allEntries)
+      .sort((a, b) => a.localeCompare(b))
+      .map((content) => content)
       .join("\n");
 
     return (
@@ -64,15 +64,10 @@ export class Agent {
     );
   }
 
-  async extractEntryFromChat(messages: ChatMessage[]): Promise<string> {
-    const messagesWithoutLastAssistantMessage =
-      messages.at(-1)!.role === "assistant" ? messages.slice(0, -1) : messages;
-
+  async summarizeChat(messages: ChatMessage[]): Promise<string> {
     const chatStr =
       "\n'''\n" +
-      messagesWithoutLastAssistantMessage
-        .map((m) => `${m.role}: ${m.content}`)
-        .join("\n") +
+      messages.map((m) => `${m.role}: ${m.content}`).join("\n") +
       "\n'''\n";
 
     const userMessagesCharacterCount = messages
@@ -97,18 +92,14 @@ export class Agent {
       messages: [{ role: "user", content: prompt }],
     });
 
-    this.state.allEntries.push({
-      date: getTodayDateStr(),
-      content: fullMessage,
-    });
-    this.state.allEntries.sort((a, b) => a.date.localeCompare(b.date));
+    this.state.allEntries[getTodayDateStr()] = fullMessage;
     this.save();
 
     return fullMessage;
   }
 
   async getWelcomeMessage(): Promise<OllamaResult> {
-    const hasHistory = this.state.allEntries.length > 0;
+    const hasHistory = Object.keys(this.state.allEntries).length > 0;
     if (!hasHistory) {
       const firstMessage = AGENT_CONSTANTS[this.id].firstMessage;
       return {
@@ -148,10 +139,14 @@ export class Agent {
     });
   }
 
-  checkInPressure(date: Date): number {
-    const lastCheckInDate = this.state.lastCheckInDate;
+  get lastCheckInDate(): string | undefined {
+    return Object.keys(this.state.allEntries).sort().at(-1);
+  }
+
+  checkInPressure(date: Date): number | null {
+    const lastCheckInDate = this.lastCheckInDate;
     if (!lastCheckInDate) {
-      return 1;
+      return null;
     }
 
     const daysSinceLastCheckIn = differenceInDays(

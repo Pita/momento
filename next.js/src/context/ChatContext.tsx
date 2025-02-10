@@ -7,18 +7,12 @@ import {
   loadChatDetails,
   startNewChat,
   sendMessageToChat,
-  concludeLastAgentChat,
 } from "@/lib/server";
 import { ChatMessage, ChatState } from "@/lib/dbSchemas";
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { addMessageToLastAgentChat, updateLastMessage } from "@/lib/chatState";
 
-type ChatLifecycleState =
-  | "initial"
-  | "ready"
-  | "sending"
-  | "concluding"
-  | "concluded";
+type ChatLifecycleState = "initial" | "ready" | "sending" | "concluded";
 interface ChatContextType {
   chatSummaries: ChatSummary[];
   currentChat: ChatState | null;
@@ -143,18 +137,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!currentChat || chatLifecycleState !== "ready") {
       return;
     }
-    setCurrentChat({
-      ...currentChat,
-      agentChats: [
-        ...currentChat.agentChats.slice(0, -1),
-        {
-          ...currentChat.agentChats.at(-1)!,
-          concluded: true,
-        },
-      ],
-    });
-    setChatLifecycleState("concluding");
-    await concludeLastAgentChat(currentChat.id);
     setChatLifecycleState("concluded");
   };
 

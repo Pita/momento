@@ -39,14 +39,9 @@ export async function loadChatDetails(chatId: string): Promise<ChatState> {
   return chat.state;
 }
 
-export async function concludeLastAgentChat(chatId: string): Promise<void> {
-  const chat = await Chat.loadOrThrow(chatId);
-  await chat.concludeAgentChat();
-}
-
 export async function getAgentSuggestions(
   chatId: string
 ): Promise<AgentSuggestion[]> {
   const chat = await Chat.loadOrThrow(chatId);
-  return chat.getAgentSuggestions();
+  return await chat.getAgentSuggestions();
 }

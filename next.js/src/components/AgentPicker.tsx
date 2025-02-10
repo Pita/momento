@@ -43,6 +43,7 @@ const AgentPicker: React.FC = () => {
   useEffect(() => {
     const fetchSuggestions = async () => {
       const suggestions = await getAgentSuggestions(currentChat!.id);
+      console.log("suggestions", suggestions);
       setSuggestions(suggestions);
     };
     fetchSuggestions();
@@ -94,13 +95,15 @@ const AgentPicker: React.FC = () => {
         key={`${suggestion.agentId}-${suggestion.reason}-${index}`}
         data-suggestion={index}
         onClick={() => onSelect(suggestion)}
-        className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-100 w-48 h-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex items-center p-3 bg-white shadow-sm border-1 border-gray-300 rounded-md hover:bg-gray-50 max-w-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-80"
       >
-        <Icon className="w-12 h-12 mb-3" />
-        <span className="font-medium mb-1 font-bold">{agent.name}</span>
-        <span className="text-xs text-gray-600 text-center line-clamp-2">
-          {reasonToLabelMapping[suggestion.reason]}
-        </span>
+        <Icon className="w-8 h-8 mr-3 flex-shrink-0" />
+        <div className="flex flex-col items-start">
+          <span className="font-bold text-start">{agent.name}</span>
+          <span className="text-xs text-gray-600 line-clamp-2">
+            {reasonToLabelMapping[suggestion.reason]}
+          </span>
+        </div>
       </button>
     );
   };
@@ -108,9 +111,9 @@ const AgentPicker: React.FC = () => {
   return (
     <div>
       <h1 className="text-2xl font-bold text-center mb-6">
-        Pick a mentor to dive deeper into a specific topic
+        Pick a topic to dive deeper into
       </h1>
-      <div className="flex flex-wrap justify-center gap-4 max-w-2xl mx-auto">
+      <div className="flex flex-row flex-wrap gap-4 max-w-2xl mx-auto">
         {suggestions.map(renderSuggestion)}
       </div>
     </div>

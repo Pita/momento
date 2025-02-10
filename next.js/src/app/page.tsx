@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { ChatProvider } from "../context/ChatContext";
 import ChatSidebar from "../components/ChatSidebar";
 import AgentChats from "../components/AgentChats";
-import ChatInput from "../components/ChatInput";
+import ChatInteraction from "@/components/ChatInteraction";
 
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -44,7 +44,7 @@ export default function Home() {
             <span className="font-bold">Chat</span>
           </div>
           <AgentChats />
-          <ChatInput />
+          <ChatInteraction />
         </main>
       </div>
     </ChatProvider>
