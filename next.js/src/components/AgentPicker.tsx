@@ -31,7 +31,7 @@ const iconMapping: Record<AgentMaterialUIIcon, IconType> = {
 const reasonToLabelMapping = {
   firstMeet: "Meet first time",
   relevantToToday: "Relevant to today",
-  overdueCheckin: "Catch up",
+  catchUp: "Catch up",
 } as const;
 
 const AgentPicker: React.FC = () => {

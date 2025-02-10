@@ -15,10 +15,7 @@ export const AgentChatZod = z.object({
 
 export type AgentChat = z.infer<typeof AgentChatZod>;
 
-export type AgentInitReason =
-  | "relevantToToday"
-  | "overdueCheckin"
-  | "firstMeet";
+export type AgentInitReason = "relevantToToday" | "catchUp" | "firstMeet";
 
 export type AgentSuggestion = {
   agentId: string;

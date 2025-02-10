@@ -142,7 +142,7 @@ export class Chat {
       reason: AgentSuggestion["reason"];
     }[] = [
       { agents: agentsRelevantToToday, reason: "relevantToToday" },
-      { agents: agentsWithOverdueCheckin, reason: "overdueCheckin" },
+      { agents: agentsWithOverdueCheckin, reason: "catchUp" },
       { agents: agentsWithNoCheckin, reason: "firstMeet" },
     ];
 
