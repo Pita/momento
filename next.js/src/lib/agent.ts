@@ -7,7 +7,7 @@ import {
   OllamaResult,
   SMART_MODEL,
 } from "./llmCall";
-import { getTodayDateStr, toRelativeDateStr } from "./date";
+import { toAbsoluteDateStr, toRelativeDateStr } from "./date";
 import { AgentInitReason, AgentState, ChatMessage } from "./dbSchemas";
 import { AGENT_CONSTANTS } from "./agentConstants";
 
@@ -59,8 +59,8 @@ export class Agent {
   }
 
   // TODO: will need a summarize function to not grow forever
-  private async getContextString(): Promise<string> {
-    const context: string[][] = [[`Today is ${getTodayDateStr()}`]];
+  private async getContextString(chatId: string): Promise<string> {
+    const context: string[][] = [[`Today is ${toAbsoluteDateStr(chatId)}`]];
 
     const journalEntries = JOURNALING_AGENT.getHistoryString();
     const ownEntries =
@@ -83,7 +83,10 @@ export class Agent {
     return context.map((c) => c.join("\n")).join("\n");
   }
 
-  async summarizeChat(messages: ChatMessage[]): Promise<string> {
+  async summarizeChat(
+    messages: ChatMessage[],
+    chatId: string
+  ): Promise<string> {
     const chatStr = quoteBlock(
       messages.map((m) => `${m.role}: ${m.content}`).join("\n")
     );
@@ -107,13 +110,16 @@ export class Agent {
       messages: [{ role: "user", content: prompt }],
     });
 
-    this.state.allEntries[getTodayDateStr()] = fullMessage;
+    this.state.allEntries[chatId] = fullMessage;
     this.save();
 
     return fullMessage;
   }
 
-  async getWelcomeMessage(initReason: AgentInitReason): Promise<OllamaResult> {
+  async getWelcomeMessage(
+    initReason: AgentInitReason,
+    chatId: string
+  ): Promise<OllamaResult> {
     const hasHistory = Object.keys(this.state.allEntries).length > 0;
     if (!hasHistory || initReason === "firstMeet") {
       const firstMessage = AGENT_CONSTANTS[this.id].firstMessage;
@@ -137,7 +143,11 @@ export class Agent {
     }
 
     const fullSystemPrompt =
-      this.systemPrompt + "\n" + (await this.getContextString()) + "\n" + rule;
+      this.systemPrompt +
+      "\n" +
+      (await this.getContextString(chatId)) +
+      "\n" +
+      rule;
 
     return await callOllamaStream({
       model: SMART_MODEL,
@@ -150,10 +160,13 @@ export class Agent {
     });
   }
 
-  async getNewAssistantMessage(messages: ChatMessage[]): Promise<OllamaResult> {
+  async getNewAssistantMessage(
+    messages: ChatMessage[],
+    chatId: string
+  ): Promise<OllamaResult> {
     const fullSystemPrompt =
       this.systemPrompt +
-      (await this.getContextString()) +
+      (await this.getContextString(chatId)) +
       "\nBriefly comment on the conversation so far similar to how a good supportive friend would. Then ask 3 very short easy questions in your response, use a numbered list. Generally keep the response short and concise.";
 
     return await callOllamaStream({

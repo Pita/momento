@@ -58,7 +58,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentChat(await serverLoadChatDetails(today));
         setChatLifecycleState("ready");
       } else {
-        const { chat, welcomeMessageStream } = await serverStartNewChat();
+        const { chat, welcomeMessageStream } = await serverStartNewChat(today);
         setChatSummaries((prev) => [...prev, { id: today }]);
         setChatLifecycleState("sending");
         const currentAssistantMessage: ChatMessage = {

@@ -1,7 +1,6 @@
 "use server";
 
 import { Chat, ChatState } from "./chat";
-import { getTodayDateStr } from "./date";
 import { AgentInitReason, AgentSuggestion } from "./dbSchemas";
 import { listKeys } from "./keyValueDB";
 
@@ -14,11 +13,10 @@ export async function serverFetchOldChats(): Promise<ChatSummary[]> {
   return chats.map((c) => ({ id: c }));
 }
 
-export async function serverStartNewChat(): Promise<{
+export async function serverStartNewChat(chatId: string): Promise<{
   chat: ChatState;
   welcomeMessageStream: AsyncGenerator<string>;
 }> {
-  const chatId = getTodayDateStr();
   const { chat, welcomeMessageStream } = await Chat.create(chatId);
   return {
     chat: chat.state,

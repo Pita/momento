@@ -9,7 +9,7 @@ import {
 } from "./dbSchemas";
 import { callOllamaToString } from "./llmCall";
 import { FAST_MODEL } from "./llmCall";
-import { getTodayDateStr } from "./date";
+import { fromDateStr } from "./date";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
 
@@ -39,7 +39,7 @@ export class Chat {
     }
 
     const { stream: welcomeMessageStream, fullMessagePromise } =
-      await JOURNALING_AGENT.getWelcomeMessage("catchUp");
+      await JOURNALING_AGENT.getWelcomeMessage("catchUp", id);
     const newState: ChatState = {
       id,
       version: "1",
@@ -71,7 +71,7 @@ export class Chat {
   }
 
   private getAgentsWithOverdueCheckin(): string[] {
-    const today = new Date();
+    const today = fromDateStr(this.id);
     return Object.values(ALL_AGENTS)
       .map((a) => ({ id: a.id, pressure: a.checkInPressure(today) }))
       .filter((a) => a.pressure !== null)
@@ -86,8 +86,7 @@ export class Chat {
   }
 
   private async createAgentsRelevantToToday(): Promise<void> {
-    const journalingEntry =
-      JOURNALING_AGENT.state.allEntries[getTodayDateStr()];
+    const journalingEntry = JOURNALING_AGENT.state.allEntries[this.id];
     if (!journalingEntry) {
       throw new Error("Journaling entry not found");
     }
@@ -182,7 +181,8 @@ export class Chat {
     this.save();
 
     const { stream, fullMessagePromise } = await agent.getWelcomeMessage(
-      initReason
+      initReason,
+      this.id
     );
 
     fullMessagePromise.then((welcomeMessage) => {
@@ -215,7 +215,8 @@ export class Chat {
     }
 
     const { stream, fullMessagePromise } = await agent.getNewAssistantMessage(
-      agentMessages
+      agentMessages,
+      this.id
     );
 
     fullMessagePromise.then((newAssistantMessage) => {
@@ -227,7 +228,7 @@ export class Chat {
     });
 
     (async () => {
-      await agent.summarizeChat(messagesForSummary);
+      await agent.summarizeChat(messagesForSummary, this.id);
     })();
 
     return stream;
