@@ -11,7 +11,7 @@ export type ChatSummary = {
 
 export async function serverFetchOldChats(): Promise<ChatSummary[]> {
   const chats = listKeys("chatState");
-  return chats.map((c) => ({ id: c })).sort((a, b) => b.id.localeCompare(a.id));
+  return chats.map((c) => ({ id: c }));
 }
 
 export async function serverStartNewChat(): Promise<{

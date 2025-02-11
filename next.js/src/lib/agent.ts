@@ -7,7 +7,7 @@ import {
   OllamaResult,
   SMART_MODEL,
 } from "./llmCall";
-import { getTodayDateStr } from "./date";
+import { getTodayDateStr, toRelativeDateStr } from "./date";
 import { AgentInitReason, AgentState, ChatMessage } from "./dbSchemas";
 import { AGENT_CONSTANTS } from "./agentConstants";
 
@@ -52,9 +52,9 @@ export class Agent {
       return null;
     }
 
-    return Object.values(this.state.allEntries)
-      .sort((a, b) => a.localeCompare(b))
-      .map((content) => content)
+    return Object.entries(this.state.allEntries)
+      .sort(([aDate], [bDate]) => bDate.localeCompare(aDate))
+      .map(([date, content]) => `${toRelativeDateStr(date)}: ${content}`)
       .join("\n");
   }
 
