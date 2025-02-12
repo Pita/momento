@@ -67,13 +67,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const initNonExistentChat = async (chatId: string) => {
     setChatLifecycleState("sending");
-    const { chat, welcomeMessageStream } = await serverStartNewChat(chatId);
     setChatSummaries((prev) => [...prev, { id: chatId }]);
     const currentAssistantMessage: ChatMessage = {
       role: "assistant",
       content: "",
     };
 
+    const { chat, welcomeMessageStream } = await serverStartNewChat(chatId);
     let updatedChat = addMessageToLastAgentChat(chat, currentAssistantMessage);
 
     setCurrentChat(updatedChat);
