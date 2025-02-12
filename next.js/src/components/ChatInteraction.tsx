@@ -2,12 +2,28 @@ import { useChat } from "@/context/ChatContext";
 import React from "react";
 import ChatInput from "./ChatInput";
 import AgentPicker from "./AgentPicker";
+import StartChatInteraction from "./StartChatInteraction";
 
 const ChatInteraction: React.FC = () => {
-  const { chatLifecycleState } = useChat();
+  const { chatLifecycleState, currentChat } = useChat();
 
-  const component =
-    chatLifecycleState === "concluded" ? <AgentPicker /> : <ChatInput />;
+  if (!currentChat) {
+    return null;
+  }
+
+  const component = (() => {
+    switch (chatLifecycleState) {
+      case null:
+        return;
+      case "nonExistent":
+        return <StartChatInteraction />;
+      case "concluded":
+        return <AgentPicker />;
+      case "ready":
+      case "sending":
+        return <ChatInput />;
+    }
+  })();
 
   return (
     <div className="w-full p-4">

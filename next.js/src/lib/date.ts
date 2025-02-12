@@ -3,6 +3,7 @@ import {
   differenceInCalendarWeeks,
   format,
   parse,
+  subDays,
 } from "date-fns";
 
 /**
@@ -10,6 +11,10 @@ import {
  */
 export function getTodayDateStr(): string {
   return format(new Date(), "yyyy-MM-dd");
+}
+
+export function getYesterdayDateStr(): string {
+  return format(subDays(new Date(), 1), "yyyy-MM-dd");
 }
 
 /**

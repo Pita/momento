@@ -23,6 +23,7 @@ export class Chat {
   }
 
   static async loadOrThrow(id: string): Promise<Chat> {
+    console.log("loading chat", id);
     const storedState = getValue(id, "chatState") as ChatState | undefined;
     if (!storedState) {
       throw new Error(`Chat ${id} not found`);

@@ -18,19 +18,22 @@ import {
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { addMessageToLastAgentChat, updateLastMessage } from "@/lib/chatState";
 
-type ChatLifecycleState = "initial" | "ready" | "sending" | "concluded";
+type ChatLifecycleState = "nonExistent" | "ready" | "sending" | "concluded";
+
 interface ChatContextType {
   chatSummaries: ChatSummary[];
   currentChat: ChatState | null;
-  selectChat: (chat: ChatSummary) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
-  chatLifecycleState: ChatLifecycleState;
+  chatLifecycleState: ChatLifecycleState | null;
   canChatConclude: boolean;
   concludeChat: () => Promise<void>;
   startAgentChat: (
     agentId: string,
     initReason: AgentInitReason
   ) => Promise<void>;
+  selectChat: (chatId: string) => Promise<void>;
+  selectNonExistentChat: (chatId: string) => void;
+  initNonExistentChat: (chatId: string) => Promise<void>;
 }
 
 // Create the context
@@ -43,7 +46,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
   const [currentChat, setCurrentChat] = useState<ChatState | null>(null);
   const [chatLifecycleState, setChatLifecycleState] =
-    useState<ChatLifecycleState>("initial");
+    useState<ChatLifecycleState | null>(null);
 
   // On mount, initialize chats
   useEffect(() => {
@@ -57,39 +60,49 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       if (todaysChatExists) {
         setCurrentChat(await serverLoadChatDetails(today));
         setChatLifecycleState("ready");
-      } else {
-        const { chat, welcomeMessageStream } = await serverStartNewChat(today);
-        setChatSummaries((prev) => [...prev, { id: today }]);
-        setChatLifecycleState("sending");
-        const currentAssistantMessage: ChatMessage = {
-          role: "assistant",
-          content: "",
-        };
-
-        let updatedChat = addMessageToLastAgentChat(
-          chat,
-          currentAssistantMessage
-        );
-
-        setCurrentChat(updatedChat);
-
-        for await (const chunk of welcomeMessageStream) {
-          currentAssistantMessage.content += chunk;
-          updatedChat = updateLastMessage(updatedChat, currentAssistantMessage);
-          setCurrentChat(updatedChat);
-        }
-        setChatLifecycleState("ready");
       }
     }
     initChat();
   }, []);
 
+  const initNonExistentChat = async (chatId: string) => {
+    setChatLifecycleState("sending");
+    const { chat, welcomeMessageStream } = await serverStartNewChat(chatId);
+    setChatSummaries((prev) => [...prev, { id: chatId }]);
+    const currentAssistantMessage: ChatMessage = {
+      role: "assistant",
+      content: "",
+    };
+
+    let updatedChat = addMessageToLastAgentChat(chat, currentAssistantMessage);
+
+    setCurrentChat(updatedChat);
+
+    for await (const chunk of welcomeMessageStream) {
+      currentAssistantMessage.content += chunk;
+      updatedChat = updateLastMessage(updatedChat, currentAssistantMessage);
+      setCurrentChat(updatedChat);
+    }
+    setChatLifecycleState("ready");
+  };
+
+  const selectNonExistentChat = (chatId: string) => {
+    setCurrentChat({
+      id: chatId,
+      version: "1",
+      agentChats: [],
+      agentsRelevantToToday: null,
+    });
+    setChatLifecycleState("nonExistent");
+  };
+
   // Function to select a chat from the sidebar by loading its details
-  const selectChat = async (chat: ChatSummary) => {
-    if (chat.id === currentChat?.id) {
+  const selectChat = async (chatId: string) => {
+    if (chatId === currentChat?.id) {
       return;
     }
-    const fullChat = await serverLoadChatDetails(chat.id);
+    const fullChat = await serverLoadChatDetails(chatId);
+    setChatLifecycleState("ready");
     setCurrentChat(fullChat);
   };
 
@@ -198,6 +211,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         canChatConclude: canChatConclude(),
         concludeChat: getConcludeChat,
         startAgentChat,
+        selectNonExistentChat,
+        initNonExistentChat,
       }}
     >
       {children}

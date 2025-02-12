@@ -133,8 +133,9 @@ export class Agent {
 
     let rule: string;
     if (this.id === "journaling") {
-      rule =
-        "Start the conversation by asking them about how their day today went";
+      rule = `Start the conversation by asking them about how ${toRelativeDateStr(
+        chatId
+      )} went`;
     } else {
       rule =
         initReason === "relevantToToday"
