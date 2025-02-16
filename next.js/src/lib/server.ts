@@ -1,56 +1,63 @@
 "use server";
 
-import { Chat, ChatState } from "./chat";
-import { AgentInitReason, AgentSuggestion } from "./dbSchemas";
-import { listKeys } from "./keyValueDB";
+import { Chat, ChatID, ChatState, getAllChats } from "./chat";
+import { getMentorsWithStates, MentorCheckinState } from "./mentor";
+import { MentorId } from "./mentorConstants";
 
-export type ChatSummary = {
-  id: string; // standardized date stamp (e.g., "2023-10-11")
-};
-
-export async function serverFetchOldChats(): Promise<ChatSummary[]> {
-  const chats = listKeys("chatState");
-  return chats.map((c) => ({ id: c }));
+export async function serverChatsOfMentor(mentorID: string): Promise<string[]> {
+  const chats = getAllChats();
+  return chats.filter((c) => c.mentorId === mentorID).map((c) => c.date);
 }
 
-export async function serverStartNewChat(chatId: string): Promise<{
+export async function serverGetMentorState(
+  mentorID: MentorId,
+  today: string
+): Promise<{ dates: string[]; todaysChat: ChatState | null }> {
+  const dates = await serverChatsOfMentor(mentorID);
+  const todaysChat = await serverTryLoadChatDetails({
+    date: today,
+    mentorId: mentorID,
+  });
+  return { dates, todaysChat };
+}
+
+export async function serverStartNewChat(chatID: ChatID): Promise<{
   chat: ChatState;
   welcomeMessageStream: AsyncGenerator<string>;
 }> {
-  const { chat, welcomeMessageStream } = await Chat.create(chatId);
+  console.log("Starting new chat", chatID);
+  const { chat, welcomeMessageStream } = await Chat.create(chatID);
   return {
     chat: chat.state,
     welcomeMessageStream,
   };
 }
 
-export async function* serverSendMessageToChat(
+export async function serverSendMessageToChat(
   content: string,
-  chatId: string
-): AsyncGenerator<string> {
-  const chat = await Chat.loadOrThrow(chatId);
-  yield* await chat.processUserMessage(content);
+  chatID: ChatID
+): Promise<AsyncGenerator<string>> {
+  const chat = await Chat.loadOrThrow(chatID);
+  return chat.processUserMessage(content);
 }
 
-export async function serverLoadChatDetails(
-  chatId: string
-): Promise<ChatState> {
-  const chat = await Chat.loadOrThrow(chatId);
+export async function serverTryLoadChatDetails(
+  chatID: ChatID
+): Promise<ChatState | null> {
+  const chat = await Chat.tryLoad(chatID);
+  if (!chat) {
+    return null;
+  }
   return chat.state;
 }
 
-export async function serverGetAgentSuggestions(
-  chatId: string
-): Promise<AgentSuggestion[]> {
-  const chat = await Chat.loadOrThrow(chatId);
-  return await chat.getAgentSuggestions();
-}
+export type MentorWithCheckinState = {
+  mentorId: MentorId;
+  state: MentorCheckinState;
+};
 
-export async function serverStartAgentChat(
-  chatId: string,
-  agentId: string,
-  initReason: AgentInitReason
-): Promise<AsyncGenerator<string>> {
-  const chat = await Chat.loadOrThrow(chatId);
-  return await chat.startAgentChat(agentId, initReason);
+export async function serverGetMentorsWithStates(
+  dateId: string
+): Promise<Array<MentorWithCheckinState>> {
+  return getMentorsWithStates(dateId);
 }

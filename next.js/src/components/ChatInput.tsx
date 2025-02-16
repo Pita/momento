@@ -1,30 +1,26 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useChat } from "../context/ChatContext";
 import AutoGrowTextArea from "./AutoGrowTextArea";
-import { AGENT_CONSTANTS } from "@/lib/agentConstants";
 
-const ChatInput: React.FC = () => {
-  const { sendMessage, chatLifecycleState, concludeChat, canChatConclude } =
-    useChat();
-  const lockInput = chatLifecycleState !== "ready";
+const ChatInput: React.FC<{
+  isProcessing: boolean;
+  sendMessage: (message: string) => void;
+}> = (props) => {
+  const { isProcessing, sendMessage } = props;
   const [inputText, setInputText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { currentChat } = useChat();
+
   const handleSend = async () => {
-    if (!inputText.trim() || lockInput) return;
+    if (!inputText.trim() || isProcessing) return;
     const message = inputText;
     setInputText("");
     await sendMessage(message);
   };
 
   useEffect(() => {
-    if (!lockInput) {
+    if (!isProcessing) {
       inputRef.current?.focus();
     }
-  }, [lockInput]);
-
-  const agentId = currentChat?.agentChats.at(-1)?.agentId;
-  const currentAgentName = agentId ? AGENT_CONSTANTS[agentId].name : "";
+  }, [isProcessing]);
 
   return (
     <>
@@ -40,7 +36,7 @@ const ChatInput: React.FC = () => {
               handleSend();
             }
           }}
-          disabled={lockInput}
+          disabled={isProcessing}
           className="flex-1 p-2 border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed resize-none min-h-[40px]"
           minHeight={70}
           maxHeight={500}
@@ -48,24 +44,10 @@ const ChatInput: React.FC = () => {
         />
         <button
           onClick={handleSend}
-          disabled={lockInput}
+          disabled={isProcessing}
           className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-blue-300 disabled:cursor-not-allowed"
         >
           Send
-        </button>
-      </div>
-      <div className="flex items-center py-3 mx-auto w-full">
-        <div className="flex-grow border-t border-gray-400"></div>
-        <span className="mx-2 text-black">or</span>
-        <div className="flex-grow border-t border-gray-400"></div>
-      </div>
-      <div className="flex justify-center">
-        <button
-          onClick={concludeChat}
-          disabled={!canChatConclude}
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-blue-300 disabled:cursor-not-allowed"
-        >
-          Conclude {currentAgentName}
         </button>
       </div>
     </>

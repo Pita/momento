@@ -29,6 +29,7 @@ export function getValue<K extends keyof typeof schemas>(
   type: K
 ): z.infer<(typeof schemas)[K]> | null {
   const filePath = getFilePath(String(type), key);
+  console.log("get filePath", filePath);
   const schema = schemas[type];
 
   try {

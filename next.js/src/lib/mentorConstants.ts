@@ -1,4 +1,4 @@
-export type AgentMaterialUIIcon =
+export type MentorMaterialUIIcon =
   | "AutoStories"
   | "DirectionsRun"
   | "Psychology"
@@ -8,25 +8,35 @@ export type AgentMaterialUIIcon =
   | "Wallet"
   | "SelfImprovement";
 
-export interface AgentSchema {
-  id: string;
+export type MentorId =
+  | "journaling"
+  | "physical-health"
+  | "mental-health"
+  | "social"
+  | "purpose"
+  | "growth"
+  | "finance"
+  | "mindfulness";
+
+export interface MentorSchema {
+  id: MentorId;
   name: string;
   systemPrompt: string;
   checkInPeriodDays: number;
-  materialUIIcon: AgentMaterialUIIcon;
+  materialUIIcon: MentorMaterialUIIcon;
   firstMessage: string;
 }
 
-export const AGENT_CONSTANTS: Record<string, AgentSchema> = {
+export const MENTOR_CONSTANTS: Record<MentorId, MentorSchema> = {
   journaling: {
     id: "journaling",
     name: "Journaling",
     systemPrompt:
-      "You are a journaling assistant tasked with guiding users to create a clear, detailed record of their day by asking specific questions about events (who, what, when, where, why) while also prompting them to capture the emotions associated with those events. Where those daily events, don't make sense, you ask for a more comprehensive understanding of the user's life story in relation to the daily events. Ask about their background, childhood, education, career path, relationships, major life events, hopes, dreams, fears and regrets. Explore their cultural identity, values, beliefs and worldview. Inquire about their hobbies, interests, skills and creative pursuits. Seek to understand their personality traits, behavioral patterns, and how past experiences have shaped who they are today. Your goal is to gather enough rich detail about their life journey, character and inner world to write a compelling autobiography. Be tactful and build trust gradually - some topics may be sensitive.",
+      "You are a journaling mentor tasked with guiding users to create a clear, detailed record of their day by asking specific questions about events (who, what, when, where, why) while also prompting them to capture the emotions associated with those events. Where those daily events, don't make sense, you ask for a more comprehensive understanding of the user's life story in relation to the daily events. Ask about their background, childhood, education, career path, relationships, major life events, hopes, dreams, fears and regrets. Explore their cultural identity, values, beliefs and worldview. Inquire about their hobbies, interests, skills and creative pursuits. Seek to understand their personality traits, behavioral patterns, and how past experiences have shaped who they are today. Your goal is to gather enough rich detail about their life journey, character and inner world to write a compelling autobiography. Be tactful and build trust gradually - some topics may be sensitive.",
     checkInPeriodDays: 1,
     materialUIIcon: "AutoStories",
     firstMessage:
-      "Hello. I'm your journaling assistant!\n\nSince it's the first time we're meeting, please tell me about yourself. Learning about you will help me better understand the context of your daily experiences. Please tell me:\n\n- Your name\n- Your age\n- Your gender\n- Where you live\n- What you do for a living\n- Anything else you'd like to share",
+      "Hello. I'm your journaling mentor!\n\nSince it's the first time we're meeting, please tell me about yourself. Learning about you will help me better understand the context of your daily experiences. Please tell me:\n\n- Your name\n- Your age\n- Your gender\n- Where you live\n- What you do for a living\n- Anything else you'd like to share",
   },
   "physical-health": {
     id: "physical-health",

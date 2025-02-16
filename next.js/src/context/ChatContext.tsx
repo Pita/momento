@@ -2,38 +2,37 @@
 
 import { getTodayDateStr } from "@/lib/date";
 import {
-  ChatSummary,
-  serverFetchOldChats,
-  serverLoadChatDetails,
-  serverStartNewChat,
+  MentorWithCheckinState,
+  serverGetMentorState,
+  serverGetMentorsWithStates,
   serverSendMessageToChat,
-  serverStartAgentChat,
+  serverStartNewChat,
+  serverTryLoadChatDetails,
 } from "@/lib/server";
-import {
-  AgentChat,
-  AgentInitReason,
-  ChatMessage,
-  ChatState,
-} from "@/lib/dbSchemas";
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { addMessageToLastAgentChat, updateLastMessage } from "@/lib/chatState";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import type { ChatID } from "@/lib/chat";
+import { ChatMessage } from "@/lib/dbSchemas";
+import { MentorId } from "@/lib/mentorConstants";
 
-type ChatLifecycleState = "nonExistent" | "ready" | "sending" | "concluded";
+export type ActiveChatState = {
+  date: string;
+  messages: ChatMessage[];
+  isProcessing: boolean;
+};
+
+export type MentorChatState = {
+  mentorId: MentorId;
+  state: "needs_creation" | null | ActiveChatState;
+  dates: string[] | null;
+};
 
 interface ChatContextType {
-  chatSummaries: ChatSummary[];
-  currentChat: ChatState | null;
-  sendMessage: (text: string) => Promise<void>;
-  chatLifecycleState: ChatLifecycleState | null;
-  canChatConclude: boolean;
-  concludeChat: () => Promise<void>;
-  startAgentChat: (
-    agentId: string,
-    initReason: AgentInitReason
-  ) => Promise<void>;
-  selectChat: (chatId: string) => Promise<void>;
-  selectNonExistentChat: (chatId: string) => void;
-  initNonExistentChat: (chatId: string) => Promise<void>;
+  mentorSelected: MentorChatState | null;
+  mentorsWithCheckinStates: Array<MentorWithCheckinState>;
+  selectMentor: (mentorId: MentorId) => void;
+  sendMessage: (content: string, chatID: ChatID) => void;
+  startNewChat: (mentorId: MentorId) => void;
+  selectOlderChat: (chatID: ChatID) => void;
 }
 
 // Create the context
@@ -43,176 +42,232 @@ const ChatContext = createContext<ChatContextType | undefined>(undefined);
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
-  const [currentChat, setCurrentChat] = useState<ChatState | null>(null);
-  const [chatLifecycleState, setChatLifecycleState] =
-    useState<ChatLifecycleState | null>(null);
+  const [mentorSelected, setMentorSelected] = useState<MentorChatState | null>(
+    null
+  );
+  const [mentorsWithCheckinStates, setMentorsWithCheckinStates] = useState<
+    Array<MentorWithCheckinState>
+  >([]);
 
-  // On mount, initialize chats
-  useEffect(() => {
-    async function initChat() {
-      const summaries = await serverFetchOldChats();
-      setChatSummaries(summaries);
+  /**
+   * Helper type guard to ensure that the given state is an ActiveChatState.
+   */
+  const isActiveChatState = (state: unknown): state is ActiveChatState => {
+    return (
+      !!state &&
+      typeof state === "object" &&
+      "isProcessing" in state &&
+      "messages" in state
+    );
+  };
 
-      const today = getTodayDateStr();
-      // Try to find today's chat detail in the in-memory storage
-      const todaysChatExists = summaries.find((chat) => chat.id === today);
-      if (todaysChatExists) {
-        setCurrentChat(await serverLoadChatDetails(today));
-        setChatLifecycleState("ready");
+  /**
+   * Helper function to update the active chat state.
+   * It checks that the current state is an ActiveChatState and applies the updater.
+   */
+  const updateActiveChatState = (
+    updater: (chat: ActiveChatState) => ActiveChatState
+  ) => {
+    setMentorSelected((prev) => {
+      if (!prev) {
+        return prev;
       }
-    }
-    initChat();
+      if (!isActiveChatState(prev.state)) {
+        throw new Error("Operation allowed only on active chat state");
+      }
+      const updatedActiveChat = updater(prev.state);
+      return { ...prev, state: updatedActiveChat };
+    });
+  };
+
+  /**
+   * Helper function for updating the assistant message.
+   * It applies the update function to the last message with the assistant role.
+   */
+  const updateLastAssistantMessage = (
+    updateFn: (content: string) => string
+  ) => {
+    updateActiveChatState((chat) => {
+      const lastMessage = chat.messages[chat.messages.length - 1];
+      if (!lastMessage || lastMessage.role !== "assistant") {
+        throw new Error("Last message is not from assistant");
+      }
+
+      return {
+        ...chat,
+        messages: chat.messages.map((msg, idx, arr) => {
+          if (idx === arr.length - 1) {
+            const updatedContent = updateFn(msg.content);
+            return { ...msg, content: updatedContent };
+          }
+          return msg;
+        }),
+      };
+    });
+  };
+
+  /**
+   * Helper function to switch the mentor's state to a new ActiveChatState.
+   */
+  const switchToActiveChatState = (activeChat: ActiveChatState) => {
+    setMentorSelected((prev) => (prev ? { ...prev, state: activeChat } : prev));
+  };
+
+  /**
+   * Helper function to set the entire chat details.
+   * Useful when loading an older chat.
+   */
+  const setChatDetails = (chatDetails: {
+    date: string;
+    messages: ChatMessage[];
+    isProcessing: boolean;
+  }) => {
+    setMentorSelected((prev) =>
+      prev ? { ...prev, state: chatDetails } : prev
+    );
+  };
+
+  useEffect(() => {
+    const fetchMentorsWithCheckinStates = async () => {
+      const mentors = await serverGetMentorsWithStates(getTodayDateStr());
+      setMentorsWithCheckinStates(mentors);
+      selectMentor("journaling");
+    };
+    fetchMentorsWithCheckinStates();
   }, []);
 
-  const initNonExistentChat = async (chatId: string) => {
-    setChatLifecycleState("sending");
-    setChatSummaries((prev) => [...prev, { id: chatId }]);
-    const currentAssistantMessage: ChatMessage = {
+  const selectMentor = (mentorId: MentorId) => {
+    if (mentorSelected?.mentorId === mentorId) {
+      return;
+    }
+
+    setMentorSelected({
+      mentorId,
+      state: null,
+      dates: null,
+    });
+
+    const today = getTodayDateStr();
+
+    serverGetMentorState(mentorId, today).then(({ dates, todaysChat }) => {
+      setMentorSelected((prev) => {
+        if (!prev || prev.mentorId !== mentorId) {
+          return prev; // Mentor selection has changed; do not update dates.
+        }
+        return {
+          ...prev,
+          dates,
+          state: todaysChat
+            ? {
+                date: todaysChat.date,
+                messages: todaysChat.messages,
+                isProcessing: false,
+              }
+            : "needs_creation",
+        };
+      });
+    });
+  };
+
+  const startNewChat = (mentorId: MentorId) => {
+    const date = getTodayDateStr();
+    const chatID: ChatID = {
+      date,
+      mentorId,
+    };
+
+    if (!mentorSelected) {
+      throw new Error("No mentor selected");
+    }
+
+    const assistantMessage: ChatMessage = {
       role: "assistant",
       content: "",
     };
 
-    const { chat, welcomeMessageStream } = await serverStartNewChat(chatId);
-    let updatedChat = addMessageToLastAgentChat(chat, currentAssistantMessage);
+    const activeChatState: ActiveChatState = {
+      date,
+      messages: [assistantMessage],
+      isProcessing: true,
+    };
 
-    setCurrentChat(updatedChat);
+    // Switch to the new active chat state using our helper
+    switchToActiveChatState(activeChatState);
 
-    for await (const chunk of welcomeMessageStream) {
-      currentAssistantMessage.content += chunk;
-      updatedChat = updateLastMessage(updatedChat, currentAssistantMessage);
-      setCurrentChat(updatedChat);
-    }
-    setChatLifecycleState("ready");
-  };
+    serverStartNewChat(chatID).then(async ({ welcomeMessageStream }) => {
+      for await (const chunk of welcomeMessageStream) {
+        // Update the assistant message using our new helper
+        updateLastAssistantMessage((currentContent) => currentContent + chunk);
+      }
 
-  const selectNonExistentChat = (chatId: string) => {
-    setCurrentChat({
-      id: chatId,
-      version: "1",
-      agentChats: [],
-      agentsRelevantToToday: null,
+      updateActiveChatState((chat) => ({
+        ...chat,
+        isProcessing: false,
+      }));
     });
-    setChatLifecycleState("nonExistent");
   };
 
-  // Function to select a chat from the sidebar by loading its details
-  const selectChat = async (chatId: string) => {
-    if (chatId === currentChat?.id) {
-      return;
+  const sendMessage = (content: string, chatID: ChatID) => {
+    if (!mentorSelected) {
+      throw new Error("No mentor selected");
     }
-    const fullChat = await serverLoadChatDetails(chatId);
-    setChatLifecycleState("ready");
-    setCurrentChat(fullChat);
-  };
 
-  // Function to send a user message, then simulate an assistant response
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || !currentChat) return;
-    setChatLifecycleState("sending");
+    const userMessage: ChatMessage = {
+      role: "user",
+      content,
+    };
 
-    // Immediately add user message to state
-    const userMessage: ChatMessage = { role: "user", content: text };
-    let updatedChat = addMessageToLastAgentChat(currentChat!, userMessage);
-    setCurrentChat(updatedChat);
-
-    const stream = await serverSendMessageToChat(text, currentChat.id);
-    let currentAssistantMessage = "";
-    updatedChat = addMessageToLastAgentChat(updatedChat, {
+    const assistantMessage: ChatMessage = {
       role: "assistant",
       content: "",
+    };
+
+    // Append both the user and assistant messages using our helper
+    updateActiveChatState((chat) => ({
+      ...chat,
+      messages: [...chat.messages, userMessage, assistantMessage],
+      isProcessing: true,
+    }));
+
+    serverSendMessageToChat(content, chatID).then(async (stream) => {
+      for await (const chunk of stream) {
+        updateLastAssistantMessage((currentContent) => currentContent + chunk);
+      }
+
+      // Once done, mark the chat as no longer processing the message.
+      updateActiveChatState((chat) => ({
+        ...chat,
+        isProcessing: false,
+      }));
     });
+  };
 
-    // Update assistant message as stream comes in
-    for await (const chunk of stream) {
-      currentAssistantMessage += chunk;
-      updatedChat = updateLastMessage(updatedChat, {
-        role: "assistant",
-        content: currentAssistantMessage,
+  const selectChat = (chatID: ChatID) => {
+    if (!mentorSelected) {
+      throw new Error("No mentor selected");
+    }
+
+    serverTryLoadChatDetails(chatID).then((chat) => {
+      if (!chat) {
+        throw new Error(`Chat ${chatID.date} not found`);
+      }
+      setChatDetails({
+        date: chat.date,
+        messages: chat.messages,
+        isProcessing: false,
       });
-      setCurrentChat(updatedChat);
-    }
-    setChatLifecycleState("ready");
-  };
-
-  const canChatConclude = () => {
-    if (!currentChat || chatLifecycleState !== "ready") {
-      return false;
-    }
-
-    const lastAgentChat = currentChat.agentChats.at(-1);
-    if (!lastAgentChat) {
-      return false;
-    }
-
-    const userMessageCount = lastAgentChat.messages.filter(
-      (msg) => msg.role === "user"
-    ).length;
-
-    if (userMessageCount === 0) {
-      return false;
-    }
-
-    return true;
-  };
-
-  const getConcludeChat = async () => {
-    if (!currentChat || chatLifecycleState !== "ready") {
-      return;
-    }
-    setChatLifecycleState("concluded");
-  };
-
-  const startAgentChat = async (
-    agentId: string,
-    initReason: AgentInitReason
-  ) => {
-    if (!currentChat) {
-      return;
-    }
-
-    setChatLifecycleState("sending");
-
-    const stream = await serverStartAgentChat(
-      currentChat.id,
-      agentId,
-      initReason
-    );
-
-    const newAgentChat: AgentChat = {
-      messages: [],
-      agentId,
-    };
-    let updatedChat = {
-      ...currentChat,
-      agentChats: [...currentChat.agentChats, newAgentChat],
-    };
-
-    let currentAssistantMessage = "";
-    for await (const chunk of stream) {
-      currentAssistantMessage += chunk;
-      updatedChat = updateLastMessage(updatedChat, {
-        role: "assistant",
-        content: currentAssistantMessage,
-      });
-      setCurrentChat(updatedChat);
-    }
-    setChatLifecycleState("ready");
+    });
   };
 
   return (
     <ChatContext.Provider
       value={{
-        chatSummaries,
-        currentChat,
-        selectChat,
+        mentorSelected,
+        mentorsWithCheckinStates,
+        selectMentor,
+        startNewChat,
         sendMessage,
-        chatLifecycleState,
-        canChatConclude: canChatConclude(),
-        concludeChat: getConcludeChat,
-        startAgentChat,
-        selectNonExistentChat,
-        initNonExistentChat,
+        selectOlderChat: selectChat,
       }}
     >
       {children}

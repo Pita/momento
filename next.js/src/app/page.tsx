@@ -3,8 +3,7 @@
 import React, { useState } from "react";
 import { ChatProvider } from "../context/ChatContext";
 import ChatSidebar from "../components/ChatSidebar";
-import AgentChats from "../components/AgentChats";
-import ChatInteraction from "@/components/ChatInteraction";
+import ChatArea from "@/components/ChatArea";
 
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,8 +42,7 @@ export default function Home() {
             </button>
             <span className="font-bold">Chat</span>
           </div>
-          <AgentChats />
-          <ChatInteraction />
+          <ChatArea />
         </main>
       </div>
     </ChatProvider>

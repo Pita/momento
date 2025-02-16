@@ -1,29 +1,27 @@
 import { useChat } from "@/context/ChatContext";
 import React from "react";
 import ChatInput from "./ChatInput";
-import AgentPicker from "./AgentPicker";
 import StartChatInteraction from "./StartChatInteraction";
 
 const ChatInteraction: React.FC = () => {
-  const { chatLifecycleState, currentChat } = useChat();
+  const { mentorSelected, sendMessage } = useChat();
+  const activeChatState = mentorSelected?.state;
+  if (!activeChatState) return null;
 
-  if (!currentChat) {
-    return null;
-  }
-
-  const component = (() => {
-    switch (chatLifecycleState) {
-      case null:
-        return;
-      case "nonExistent":
-        return <StartChatInteraction />;
-      case "concluded":
-        return <AgentPicker />;
-      case "ready":
-      case "sending":
-        return <ChatInput />;
-    }
-  })();
+  const component =
+    activeChatState === "needs_creation" ? (
+      <StartChatInteraction mentorId={mentorSelected.mentorId} />
+    ) : (
+      <ChatInput
+        isProcessing={activeChatState.isProcessing}
+        sendMessage={(message) =>
+          sendMessage(message, {
+            date: activeChatState.date,
+            mentorId: mentorSelected.mentorId,
+          })
+        }
+      />
+    );
 
   return (
     <div className="w-full p-4">

@@ -1,63 +1,88 @@
 import { z } from "zod";
-import { getValue, setValue } from "./keyValueDB";
-import { ALL_AGENTS, JOURNALING_AGENT } from "./agent";
-import {
-  AgentChat,
-  AgentInitReason,
-  AgentSuggestion,
-  ChatStateZod,
-} from "./dbSchemas";
-import { callOllamaToString } from "./llmCall";
-import { FAST_MODEL } from "./llmCall";
-import { fromDateStr } from "./date";
+import { getValue, listKeys, setValue } from "./keyValueDB";
+import { Mentor, ALL_MENTORS, JOURNALING_MENTOR } from "./mentor";
+import { ChatStateZod } from "./dbSchemas";
+import { MentorId } from "./mentorConstants";
 
 export type ChatState = z.infer<typeof ChatStateZod>;
 
+export type ChatID = {
+  date: string;
+  mentorId: MentorId;
+};
+
+function createChatID(chatID: ChatID): string {
+  return `${chatID.date}__${chatID.mentorId}`;
+}
+
+function parseChatID(id: string): ChatID {
+  const match = id.match(/^(\d{4}-\d{2}-\d{2})__(.+)$/);
+  if (!match) {
+    throw new Error(`Invalid chat ID format: ${id}`);
+  }
+  const [, date, mentorId] = match;
+  return { date, mentorId: mentorId as MentorId };
+}
+
+export function getAllChats(): ChatID[] {
+  const chats = listKeys("chatState");
+  return chats.map(parseChatID);
+}
+
 export class Chat {
-  id: string;
+  date: string;
+  mentor: Mentor;
   state: ChatState;
 
-  constructor(id: string, state: ChatState) {
-    this.id = id;
+  constructor(date: string, state: ChatState, mentor: Mentor) {
+    this.date = date;
     this.state = state;
+    this.mentor = mentor;
   }
 
-  static async loadOrThrow(id: string): Promise<Chat> {
-    console.log("loading chat", id);
-    const storedState = getValue(id, "chatState") as ChatState | undefined;
+  static async tryLoad(chatID: ChatID): Promise<Chat | null> {
+    const { date, mentorId } = chatID;
+    const id = createChatID(chatID);
+    const storedState = getValue(id, "chatState");
     if (!storedState) {
+      return null;
+    }
+    return new Chat(date, storedState, ALL_MENTORS[mentorId]);
+  }
+
+  static async loadOrThrow(chatID: ChatID): Promise<Chat> {
+    const chat = await Chat.tryLoad(chatID);
+    if (!chat) {
+      const id = createChatID(chatID);
       throw new Error(`Chat ${id} not found`);
     }
-    return new Chat(id, storedState);
+    return chat;
   }
 
   static async create(
-    id: string
+    chatID: ChatID
   ): Promise<{ chat: Chat; welcomeMessageStream: AsyncGenerator<string> }> {
-    const storedState = getValue(id, "chatState") as ChatState | undefined;
-    if (storedState) {
-      throw new Error(`Chat ${id} already exists`);
+    const { date, mentorId } = chatID;
+    const existingChat = await Chat.tryLoad(chatID);
+    if (existingChat) {
+      throw new Error(`Chat already exists`);
     }
 
     const { stream: welcomeMessageStream, fullMessagePromise } =
-      await JOURNALING_AGENT.getWelcomeMessage("catchUp", id);
+      await JOURNALING_MENTOR.getInitialMessage(chatID.date);
+
     const newState: ChatState = {
-      id,
+      date,
+      mentorId,
       version: "1",
-      agentChats: [
-        {
-          agentId: "journaling",
-          messages: [],
-        },
-      ],
-      agentsRelevantToToday: [],
+      messages: [],
     };
-    const newChat = new Chat(id, newState);
+    const newChat = new Chat(date, newState, ALL_MENTORS[mentorId]);
     newChat.save();
 
     fullMessagePromise.then((welcomeMessage) => {
       setTimeout(() => {
-        newChat.state.agentChats[0].messages.push({
+        newChat.state.messages.push({
           role: "assistant",
           content: welcomeMessage,
         });
@@ -68,160 +93,25 @@ export class Chat {
   }
 
   save() {
-    setValue(this.id, "chatState", this.state);
-  }
-
-  private getAgentsWithOverdueCheckin(): string[] {
-    const today = fromDateStr(this.id);
-    return Object.values(ALL_AGENTS)
-      .map((a) => ({ id: a.id, pressure: a.checkInPressure(today) }))
-      .filter((a) => a.pressure !== null)
-      .sort((a, b) => b.pressure! - a.pressure!)
-      .map((a) => a.id);
-  }
-
-  private getAgentsWithNoCheckin(): string[] {
-    return Object.values(ALL_AGENTS)
-      .filter((a) => a.lastCheckInDate === undefined)
-      .map((a) => a.id);
-  }
-
-  private async createAgentsRelevantToToday(): Promise<void> {
-    const journalingEntry = JOURNALING_AGENT.state.allEntries[this.id];
-    if (!journalingEntry) {
-      throw new Error("Journaling entry not found");
-    }
-    const agentsAvailable = Object.values(ALL_AGENTS);
-
-    const agents = agentsAvailable.map((a) => ({
-      id: a.id,
-      description: a.systemPrompt,
-    }));
-
-    const prompt =
-      "Return a list of up to 3 coaches that can help the user based on today's journal entry. Use a bullet point list and only return the coach ids." +
-      "\n\nEntry:\n''' \n" +
-      journalingEntry +
-      "\n'''\n" +
-      "Here is the list of coaches and their descriptions:" +
-      "\n" +
-      JSON.stringify(agents);
-
-    const response = await callOllamaToString({
-      model: FAST_MODEL,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const agentIds = agentsAvailable
-      .filter((a) => response.includes(a.id))
-      .map((a) => a.id);
-
-    this.state.agentsRelevantToToday = agentIds;
-    this.save();
-  }
-
-  private getAgentsRelevantToToday(agentsWithNoCheckin: string[]): string[] {
-    if (!this.state.agentsRelevantToToday) {
-      this.createAgentsRelevantToToday();
-    }
-    const agentsWithNoCheckinSet = new Set(agentsWithNoCheckin);
-    return this.state.agentsRelevantToToday!.filter(
-      (a) => !agentsWithNoCheckinSet.has(a)
-    );
-  }
-
-  async getAgentSuggestions(): Promise<AgentSuggestion[]> {
-    const agentsWithNoCheckin = this.getAgentsWithNoCheckin();
-    const agentsRelevantToToday = await this.getAgentsRelevantToToday(
-      agentsWithNoCheckin
-    );
-    const agentsWithOverdueCheckin = this.getAgentsWithOverdueCheckin();
-
-    const suggestions: AgentSuggestion[] = [];
-    const agentsCompleted = this.state.agentChats.map((a) => a.agentId);
-
-    const agentsIDsUsed = new Set<string>(agentsCompleted);
-    const agentSources: {
-      agents: string[];
-      reason: AgentSuggestion["reason"];
-    }[] = [
-      { agents: agentsRelevantToToday, reason: "relevantToToday" },
-      { agents: agentsWithOverdueCheckin, reason: "catchUp" },
-      { agents: agentsWithNoCheckin, reason: "firstMeet" },
-    ];
-
-    for (const { agents, reason } of agentSources) {
-      for (const agentId of agents) {
-        if (!agentsIDsUsed.has(agentId)) {
-          suggestions.push({ agentId, reason });
-          agentsIDsUsed.add(agentId);
-        }
-      }
-    }
-
-    return suggestions;
-  }
-
-  async startAgentChat(
-    agentId: string,
-    initReason: AgentInitReason
-  ): Promise<AsyncGenerator<string>> {
-    const agent = ALL_AGENTS[agentId];
-    if (!agent) {
-      throw new Error(`Agent ${agentId} not found`);
-    }
-    if (this.state.agentChats.some((chat) => chat.agentId === agentId)) {
-      throw new Error(`Agent chat for agent ${agentId} already exists`);
-    }
-    const newAgentChat: AgentChat = {
-      agentId,
-      messages: [],
-    };
-    this.state.agentChats.push(newAgentChat);
-
-    this.save();
-
-    const { stream, fullMessagePromise } = await agent.getWelcomeMessage(
-      initReason,
-      this.id
-    );
-
-    fullMessagePromise.then((welcomeMessage) => {
-      setTimeout(() => {
-        newAgentChat.messages.push({
-          role: "assistant",
-          content: welcomeMessage,
-        });
-        this.save();
-      }, 1);
-    });
-
-    return stream;
+    console.log("this.date", this.date);
+    const id = createChatID({ date: this.date, mentorId: this.mentor.id });
+    setValue(id, "chatState", this.state);
   }
 
   async processUserMessage(message: string): Promise<AsyncGenerator<string>> {
-    const agentHistory = this.state.agentChats.at(-1)!;
-    const agentMessages = agentHistory.messages;
     // add message to history
-    agentMessages.push({
+    this.state.messages.push({
       role: "user",
       content: message,
     });
 
-    const messagesForSummary = agentMessages.slice();
+    const messagesForSummary = this.state.messages.slice();
 
-    const agent = ALL_AGENTS[agentHistory.agentId];
-    if (!agent) {
-      throw new Error(`Agent ${agentHistory.agentId} not found`);
-    }
-
-    const { stream, fullMessagePromise } = await agent.getNewAssistantMessage(
-      agentMessages,
-      this.id
-    );
+    const { stream, fullMessagePromise } =
+      await this.mentor.getNewAssistantMessage(this.state.messages, this.date);
 
     fullMessagePromise.then((newAssistantMessage) => {
-      agentMessages.push({
+      this.state.messages.push({
         role: "assistant",
         content: newAssistantMessage,
       });
@@ -229,7 +119,7 @@ export class Chat {
     });
 
     (async () => {
-      await agent.summarizeChat(messagesForSummary, this.id);
+      await this.mentor.summarizeChat(messagesForSummary, this.date);
     })();
 
     return stream;
