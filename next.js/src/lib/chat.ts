@@ -69,7 +69,7 @@ export class Chat {
     }
 
     const { stream: welcomeMessageStream, fullMessagePromise } =
-      await JOURNALING_MENTOR.getInitialMessage(chatID.date);
+      await ALL_MENTORS[mentorId].getInitialMessage(date);
 
     const newState: ChatState = {
       date,

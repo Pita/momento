@@ -174,17 +174,17 @@ export class Mentor {
     return Object.keys(this.state.summaries).sort().at(-1);
   }
 
-  checkInPressure(date: Date): number | null {
+  needsCheckIn(date: Date): boolean {
     const lastCheckInDate = this.lastCheckInDate;
     if (!lastCheckInDate) {
-      return null;
+      return true;
     }
 
     const daysSinceLastCheckIn = differenceInDays(
       date,
       new Date(lastCheckInDate)
     );
-    return daysSinceLastCheckIn / this.checkInPeriodDays;
+    return daysSinceLastCheckIn > this.checkInPeriodDays;
   }
 }
 
@@ -265,14 +265,13 @@ export async function getMentorsWithStates(
   }
 
   return Object.entries(ALL_MENTORS).map(([mentorId, mentor]) => {
-    const checkinPressure = mentor.checkInPressure(new Date(dateId));
+    const needsCheckIn = mentor.needsCheckIn(new Date(dateId));
 
     return {
       mentorId,
-      state:
-        checkinPressure && checkinPressure > 0.5
-          ? { type: "needs_attention", msg: "Let's check in" }
-          : { type: "regular" },
+      state: needsCheckIn
+        ? { type: "needs_attention", msg: "Let's check in" }
+        : { type: "regular" },
     };
   }) as Array<{ mentorId: MentorId; state: MentorCheckinState }>;
 }
